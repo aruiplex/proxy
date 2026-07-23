@@ -33,7 +33,7 @@ proxy env on && eval "$(proxy env show)"  # 当前 shell 走代理; 之后新 sh
 | `proxy status` | 进程/端口/控制器/出口节点/活跃连接；**控制器 ↓ 时自动诊断**（见下） |
 | `proxy log [-f]` | 实时日志 |
 | `proxy env on \| off \| show` | 代理环境变量开关（.bashrc 钩子注入；`show` 供 `eval`） |
-| `proxy node list \| test [GROUP] \| use <NAME>` | 节点管理（控制器 API） |
+| `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点管理：`list` 带序号并过滤机场信息节点；`use` 支持序号/子串(唯一则切，多义弹菜单)/无参交互(fzf 或序号菜单) |
 | `proxy merge list \| add '<RULE>' \| rm '<PAT>' \| diff \| apply` | 前置规则管理（安全） |
 | `proxy sub add <name> <URL>` | 添加/更新命名订阅 |
 | `proxy sub rm <name> \| list \| show [name]` | 删除 / 列出（活跃标记，token 脱敏）/ 查看 |
@@ -110,5 +110,5 @@ shell 启动时 `eval "$(proxy _login 2>/dev/null)"`：若 mihomo 未运行则�
 
 - 必需：`bash` 4+、`curl`、`awk`、`sed`、`grep`。
 - JSON 解析（status/node/sub）：`python3`（近通用）；缺则相应命令提示安装。
-- 安装可选：`brew`（tier-2）、`jq`（加速 JSON，可选）。
+- 安装可选：`brew`（tier-2）、`jq`（加速 JSON，可选）、`fzf`（`proxy node use` 交互模糊选择，可选；无则用序号菜单）。
 - TUN：`sudo` + `python3`；无 sudo 时 `tun` 命令降级提示。

@@ -14,9 +14,10 @@ node_cmd() {
 
 node_list() {
     json_guard
+    ctrl_require            # distinguishes "controller down" from "no group"
     local g
     g=$(node_group)
-    [[ -n "$g" ]] || die "未找到可选节点组 (config.yaml 里没有 Selector/URLTest 组?)"
+    [[ -n "$g" ]] || die "config.yaml 里没有 Selector/URLTest 节点组 (订阅是否含 proxy-groups? proxy sub refresh 后 proxy restart)"
     local now
     now=$(ctrl_get "/proxies/$(jq_uri "$g")" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('now',''))" 2>/dev/null)
     say "${C_B}组: $g${C_N}  当前: ${C_G}$now${C_N}"
@@ -31,6 +32,7 @@ for n in d.get('all',[]):
 # test every node in a group for latency; prints sorted ascending
 node_test() {
     json_guard
+    ctrl_require
     local g url timeout
     g=${1:-$(node_group)}
     [[ -n "$g" ]] || die "未找到节点组"
@@ -38,7 +40,6 @@ node_test() {
     timeout=$(conf_get test_timeout); timeout=${timeout:-5000}
     info "测延迟 (group=$g, url=$url, timeout=${timeout}ms) ..."
     ctrl_get "/proxies/$(jq_uri "$g")" | python3 -c "import sys,json;d=json.load(sys.stdin);[print(n) for n in d.get('all',[])]" 2>/dev/null | while read -r n; do
-        local code ms
         out=$(ctrl_get "/proxies/$(jq_uri "$n")/delay?url=${url}&timeout=${timeout}" 2>/dev/null)
         ms=$(printf '%s' "$out" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('delay',''))" 2>/dev/null)
         if [[ -n "$ms" ]]; then
@@ -51,6 +52,7 @@ node_test() {
 
 node_use() {
     json_guard
+    ctrl_require
     local name=$1 g code
     [[ -n "$name" ]] || die "用法: proxy node use <NAME>"
     g=$(node_group)

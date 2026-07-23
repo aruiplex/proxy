@@ -88,6 +88,18 @@ ctrl_reload() {
         "http://$(controller_addr)/configs?force=true"
 }
 
+# true if the controller answers /version (i.e. external-controller is up)
+ctrl_up() { ctrl_get /version >/dev/null 2>&1; }
+
+# die with an actionable message when the controller is unreachable — most
+# "no node group / empty status" reports are really this, not a missing group.
+ctrl_require() {
+    ctrl_up || die "控制器不可达 (http://$(controller_addr) ↓)。
+  原因多为运行中的 mihomo 用了不带 external-controller 的旧配置 (热重载无法应用新配置 → 死循环)。
+  修复: proxy restart   (用磁盘上带 external-controller 的 config 重起)
+  若仍 ↓: grep external-controller ~/.config/mihomo/config.yaml  和  proxy log"
+}
+
 # --- JSON: prefer python3 (near-universal); degrade to a clear message if absent ---
 json_guard() { has python3 || die "此命令需要 python3 解析 JSON (未安装)"; }
 

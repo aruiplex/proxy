@@ -43,7 +43,7 @@ svc_restart() { svc_stop >/dev/null 2>&1; svc_start; }
 
 svc_status() {
     json_guard
-    local pid node conns rules
+    local pid node conns rules ctrl_up
     pid=$(svc_pid)
     if [[ -n "$pid" ]]; then
         ok "运行中 (pid $pid)"
@@ -55,21 +55,25 @@ svc_status() {
     ports=$(ss -ltnp 2>/dev/null | awk '{print $4}' | grep -oE ':[0-9]+$' | tr -d ':' | sort -u | tr '\n' ' ')
     say "  监听端口: ${ports:-<none>}"
     # controller
-    if ctrl_get /version >/dev/null 2>&1; then
+    if ctrl_up; then
+        ctrl_up=1
         say "  控制器:   http://$(controller_addr) ↑"
     else
-        say "  控制器:   ↓"
+        ctrl_up=0
+        warn "  控制器:   ↓ (9090 未监听; 运行中的 mihomo 用了不带 external-controller 的旧配置)"
+        say "           修复: proxy restart"
     fi
-    # current exit node
-    node=$(node_group 2>/dev/null)
-    if [[ -n "$node" ]]; then
-        local now
-        now=$(ctrl_get "/proxies/$(jq_uri "$node")" 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('now',''))" 2>/dev/null)
-        say "  出口节点: $now  (组: $node)"
+    # current exit node + live connections (only meaningful when controller is up)
+    if (( ctrl_up )); then
+        node=$(node_group 2>/dev/null)
+        if [[ -n "$node" ]]; then
+            local now
+            now=$(ctrl_get "/proxies/$(jq_uri "$node")" 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('now',''))" 2>/dev/null)
+            say "  出口节点: $now  (组: $node)"
+        fi
+        conns=$(ctrl_get /connections 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(len(d.get('connections') or []))" 2>/dev/null)
+        say "  活跃连接: ${conns:-0}"
     fi
-    # live connections count
-    conns=$(ctrl_get /connections 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(len(d.get('connections') or []))" 2>/dev/null)
-    say "  活跃连接: ${conns:-?}"
 }
 
 svc_log() {

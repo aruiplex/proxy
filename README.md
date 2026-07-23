@@ -37,6 +37,7 @@ proxy env on && eval "$(proxy env show)"  # 当前 shell 走代理; 之后新 sh
 | `proxy merge list \| add '<RULE>' \| rm '<PAT>' \| diff \| apply` | 前置规则管理（安全） |
 | `proxy sub set <URL> \| refresh` | 订阅管理（刷新后自动重新 merge） |
 | `proxy tun on \| off \| --setup-nopasswd` | 透明 TUN（需 root） |
+| `proxy check` | 系统代理状态及外网连通性测试 |
 | `proxy doctor` | 环境体检 |
 | `proxy upgrade` | 按 install_method 升级 mihomo |
 | `proxy uninstall` | 移除钩子/软链（配置保留） |

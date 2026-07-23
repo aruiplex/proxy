@@ -15,6 +15,7 @@
 #   merge list|add|rm|diff|apply   manage prepend rules (safe: validate then reload)
 #   sub set <url>|refresh   subscription management (refresh re-applies merge)
 #   tun on|off|--setup-nopasswd   transparent TUN (needs root)
+#   check          system proxy & connectivity check
 #   doctor         environment health check
 #   upgrade|uninstall
 set -o pipefail
@@ -68,6 +69,7 @@ case $cmd in
     merge)          load merge; merge_cmd "$@" ;;
     sub)            load sub; sub_cmd "$@" ;;
     tun)            load tun; tun_cmd "$@" ;;
+    check)          load check; proxy_check "$@" ;;
 
     _login)         load env; env_login ;;     # internal: called by .bashrc hook
 

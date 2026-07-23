@@ -4,12 +4,23 @@
 # is identical across machines.
 
 svc_pid() { local bin; bin=$(mihomo_bin 2>/dev/null) || bin='mihomo'; pgrep -f "$(printf '%s' "$bin" | sed 's/[].\\*[]/\\&/g') -d" | head -1; }
+# any mihomo process at all (catches foreign/brew-managed instances our -d pattern misses)
+svc_any() { pgrep -x mihomo 2>/dev/null | head -1; }
+
+# release a brew-managed mihomo so its supervisor doesn't respawn it under us
+_brew_stop() { has brew && brew services stop mihomo >/dev/null 2>&1 || true; }
 
 svc_start() {
     local bin
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制 (运行 proxy install)"
     [[ -f "$CONFIG" ]] || die "未找到 config.yaml: $CONFIG (运行 proxy init)"
     if [[ -n "$(svc_pid)" ]]; then warn "已在运行 (pid $(svc_pid))"; return 0; fi
+    # a foreign mihomo (brew services / stray) holding the port would make our
+    # start fail on 7890 — stop it first.
+    if [[ -n "$(svc_any)" ]]; then
+        warn "已有非本工具管理的 mihomo 在跑 (pid $(svc_any); 可能 brew services); 先停掉"
+        svc_stop
+    fi
     mkdir -p "$CONF_DIR"
     info "启动 mihomo ..."
     nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
@@ -29,13 +40,15 @@ svc_start() {
 }
 
 svc_stop() {
-    local pid; pid=$(svc_pid)
-    [[ -n "$pid" ]] || { info "未在运行"; return 0; }
-    info "停止 mihomo (pid $pid) ..."
-    kill "$pid" 2>/dev/null
+    _brew_stop
+    local pids
+    pids=$( { svc_pid; svc_any; } | sort -u | grep -v '^$' )
+    [[ -n "$pids" ]] || { info "未在运行"; return 0; }
+    info "停止 mihomo (pid: $(echo $pids | tr '\n' ' ')) ..."
+    kill $pids 2>/dev/null
     local i
-    for i in $(seq 1 20); do [[ -z "$(svc_pid)" ]] && break; sleep 0.2; done
-    [[ -n "$(svc_pid)" ]] && { warn "未退出，发送 KILL"; kill -9 "$(svc_pid)" 2>/dev/null; }
+    for i in $(seq 1 20); do [[ -z "$(svc_any)" ]] && break; sleep 0.2; done
+    [[ -n "$(svc_any)" ]] && { warn "未退出，发送 KILL"; pkill -9 -x mihomo 2>/dev/null; }
     ok "已停止"
 }
 

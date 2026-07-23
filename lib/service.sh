@@ -71,6 +71,39 @@ svc_apply() {
     esac
 }
 
+# When the controller is down, explain WHY by inspecting the running process:
+# which -f config it uses, and whether that config has external-controller.
+# This turns "9090 ↓, restart it" into a precise diagnosis (foreign config, missing
+# field, wrong config file, or port conflict).
+_svc_diag() {
+    local pid; pid=$(svc_any)
+    if [[ -z "$pid" ]]; then
+        say "  诊断: 无 mihomo 进程; 运行 proxy start"
+        return
+    fi
+    local args fcfg
+    args=$(ps -p "$pid" -o args= 2>/dev/null | sed 's/^ *//')
+    say "  运行实例 pid $pid: $args"
+    fcfg=$(printf '%s' "$args" | sed -nE 's/.*[[:space:]]-f[[:space:]]+([^[:space:]]+).*/\1/p')
+    if [[ -z "$fcfg" ]]; then
+        warn "  该实例未指定 -f (用 mihomo 默认配置, 通常无 external-controller) → 9090 起不来"
+        say "  修复: proxy restart  (用 $CONFIG 重起, 带控制器)"
+        return
+    fi
+    if [[ "$fcfg" != "$CONFIG" ]]; then
+        warn "  该实例用的不是本工具的配置: $fcfg  (本工具: $CONFIG)"
+        say "  → 残留/外来实例; proxy restart 会停掉它并用 $CONFIG 重起"
+        return
+    fi
+    if grep -qE '^[[:space:]]*external-controller:' "$fcfg" 2>/dev/null; then
+        say "  配置 $fcfg 含 external-controller, 但控制器仍 ↓"
+        say "  → 可能 secret 不匹配或 9090 端口被占; 查: ss -ltnp | grep 9090  和  proxy log"
+    else
+        warn "  配置 $fcfg 无 external-controller 字段 → 这就是 9090 起不来的原因"
+        say "  修复: printf '\\nexternal-controller: 127.0.0.1:9090\\n' >> $fcfg; proxy restart"
+    fi
+}
+
 svc_status() {
     json_guard
     local pid node conns rules ctrl_up
@@ -90,8 +123,8 @@ svc_status() {
         say "  控制器:   http://$(controller_addr) ↑"
     else
         ctrl_up=0
-        warn "  控制器:   ↓ (9090 未监听; 运行中的 mihomo 用了不带 external-controller 的旧配置)"
-        say "           修复: proxy restart"
+        warn "  控制器:   ↓"
+        _svc_diag
     fi
     # current exit node + live connections (only meaningful when controller is up)
     if (( ctrl_up )); then

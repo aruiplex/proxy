@@ -13,7 +13,7 @@
 #   env on|off     toggle proxy env vars in the current shell (via .bashrc hook)
 #   node list|test|use   pick/switch exit nodes (controller API)
 #   merge list|add|rm|diff|apply   manage prepend rules (safe: validate then reload)
-#   sub set <url>|refresh   subscription management (refresh re-applies merge)
+#   sub add|rm|list|use|show|refresh   multi-subscription management (refresh re-applies merge)
 #   tun on|off|--setup-nopasswd   transparent TUN (needs root)
 #   check          system proxy & connectivity check
 #   doctor         environment health check

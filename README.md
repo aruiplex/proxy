@@ -35,7 +35,11 @@ proxy env on && eval "$(proxy env show)"  # 当前 shell 走代理; 之后新 sh
 | `proxy env on \| off \| show` | 代理环境变量开关（.bashrc 钩子注入；`show` 供 `eval`） |
 | `proxy node list \| test [GROUP] \| use <NAME>` | 节点管理（控制器 API） |
 | `proxy merge list \| add '<RULE>' \| rm '<PAT>' \| diff \| apply` | 前置规则管理（安全） |
-| `proxy sub set <URL> \| refresh` | 订阅管理（刷新后自动重新 merge） |
+| `proxy sub add <name> <URL>` | 添加/更新命名订阅 |
+| `proxy sub rm <name> \| list \| show [name]` | 删除 / 列出（活跃标记，token 脱敏）/ 查看 |
+| `proxy sub use <name> [--no-refresh]` | 切换活跃订阅并立即拉取应用 |
+| `proxy sub refresh [name]` | 刷新活跃（或指定）订阅；自动重新前置 merge |
+| `proxy sub set <URL>` | 旧用法：存为 default + 激活 + 拉取 |
 | `proxy tun on \| off \| --setup-nopasswd` | 透明 TUN（需 root） |
 | `proxy check` | 系统代理状态及外网连通性测试 |
 | `proxy doctor` | 环境体检 |

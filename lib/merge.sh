@@ -132,11 +132,8 @@ merge_apply() {
     cp -f "$CONFIG" "$BAK"; mv -f "$tmp" "$CONFIG"
     info "已注入 ${#RULES[@]} 条规则 (缩进=${INDENT} 空格) 到 rules: 顶部; 备份 → $BAK"
 
-    # 5) hot-reload (rejected -> running core keeps old config; we never kill)
-    local code; code=$(ctrl_reload "$CONFIG")
-    case "$code" in
-        204|200) ok "已热重载 (HTTP $code)" ;;
-        000)     warn "控制器无响应 (mihomo 未运行?); 配置已更新, 下次 proxy start 生效" ;;
-        *)       warn "热重载 HTTP $code; 运行中 mihomo 仍用旧配置; 可 proxy restart" ;;
-    esac
+    # 5) apply the on-disk config: hot-reload, or restart if controller is down
+    # shellcheck source=service.sh
+    source "$SCRIPT_DIR/lib/service.sh"
+    svc_apply
 }

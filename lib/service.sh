@@ -41,6 +41,23 @@ svc_stop() {
 
 svc_restart() { svc_stop >/dev/null 2>&1; svc_start; }
 
+# Apply the on-disk config: hot-reload via the controller; if the controller is
+# unreachable (000), fall back to stop+start so the new config actually takes
+# effect. Without this, `sub use`/`refresh`/`merge apply` can report success
+# while the running core keeps the OLD config (controller down -> reload fails).
+svc_apply() {
+    local code; code=$(ctrl_reload "$CONFIG")
+    case "$code" in
+        204|200) ok "已热重载" ;;
+        000)
+            warn "控制器无响应, 重启 mihomo 以应用新配置 ..."
+            svc_stop >/dev/null 2>&1
+            svc_start
+            ;;
+        *) warn "热重载 HTTP $code; 可 proxy restart" ;;
+    esac
+}
+
 svc_status() {
     json_guard
     local pid node conns rules ctrl_up

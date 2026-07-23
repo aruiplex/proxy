@@ -174,10 +174,8 @@ sub_refresh() {
         fi
     fi
 
-    local code; code=$(ctrl_reload "$CONFIG")
-    case "$code" in
-        204|200) ok "已热重载" ;;
-        000)     warn "控制器无响应 (mihomo 未运行?); 配置已更新, 下次 proxy start 生效" ;;
-        *)       warn "热重载 HTTP $code; 可 proxy restart" ;;
-    esac
+    # apply the on-disk config: hot-reload, or restart if controller is down
+    # shellcheck source=service.sh
+    source "$SCRIPT_DIR/lib/service.sh"
+    svc_apply
 }

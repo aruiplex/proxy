@@ -1,0 +1,36 @@
+# proxy/templates/config.minimal.yaml
+# 最小可用 mihomo 配置, proxy init 在用户无 config.yaml 时复制为起点。
+# 下载真实订阅后用 `proxy sub refresh` 覆盖; merge 规则会自动重新前置。
+
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+# secret: "change-me"        # 取消注释并 `proxy init` 后, 写入 proxy.conf 的 secret
+
+tun:
+  enable: false
+  stack: gvisor
+  dns-hijack:
+    - any:53
+  auto-route: true
+  auto-detect-interface: true
+
+dns:
+  enable: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - https://1.1.1.1/dns-query
+    - https://dns.google/dns-query
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+- GEOIP,CN,DIRECT
+- MATCH,PROXY

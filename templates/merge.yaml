@@ -1,0 +1,8 @@
+# proxy/templates/merge.yaml
+# 前置规则文件 (Clash / mihomo prepend-rules 格式, 兼容 Clash Verge)。
+# `proxy merge add/rm/apply` 会把这些规则幂等地前置到 config.yaml 的 rules: 顶部,
+# 在订阅刷新覆盖后用 `proxy sub refresh` 会自动重新前置。
+#
+# 添加规则:  proxy merge add 'DOMAIN-SUFFIX,foo.com,DIRECT'
+prepend-rules:
+  - DOMAIN-SUFFIX,localhost,DIRECT

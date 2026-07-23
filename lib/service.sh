@@ -1,0 +1,82 @@
+# shellcheck shell=bash
+# proxy/lib/service.sh — mihomo lifecycle. Manages the binary directly (nohup +
+# controller), independent of how it was installed (brew/gz/github), so behavior
+# is identical across machines.
+
+svc_pid() { local bin; bin=$(mihomo_bin 2>/dev/null) || bin='mihomo'; pgrep -f "$(printf '%s' "$bin" | sed 's/[].\\*[]/\\&/g') -d" | head -1; }
+
+svc_start() {
+    local bin
+    bin=$(mihomo_bin) || die "未找到 mihomo 二进制 (运行 proxy install)"
+    [[ -f "$CONFIG" ]] || die "未找到 config.yaml: $CONFIG (运行 proxy init)"
+    if [[ -n "$(svc_pid)" ]]; then warn "已在运行 (pid $(svc_pid))"; return 0; fi
+    mkdir -p "$CONF_DIR"
+    info "启动 mihomo ..."
+    nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
+    local i
+    for i in 1 2 3 4 5; do
+        sleep 0.5
+        [[ -n "$(svc_pid)" ]] && break
+    done
+    if [[ -z "$(svc_pid)" ]]; then
+        die "启动失败，日志末尾:\n$(tail -5 "$LOG" 2>/dev/null)"
+    fi
+    if ctrl_get /version >/dev/null 2>&1; then
+        ok "已启动 (pid $(svc_pid)), 控制器 http://$(controller_addr) 就绪"
+    else
+        warn "进程已起 (pid $(svc_pid)) 但控制器无响应，稍候或查 proxy log"
+    fi
+}
+
+svc_stop() {
+    local pid; pid=$(svc_pid)
+    [[ -n "$pid" ]] || { info "未在运行"; return 0; }
+    info "停止 mihomo (pid $pid) ..."
+    kill "$pid" 2>/dev/null
+    local i
+    for i in $(seq 1 20); do [[ -z "$(svc_pid)" ]] && break; sleep 0.2; done
+    [[ -n "$(svc_pid)" ]] && { warn "未退出，发送 KILL"; kill -9 "$(svc_pid)" 2>/dev/null; }
+    ok "已停止"
+}
+
+svc_restart() { svc_stop >/dev/null 2>&1; svc_start; }
+
+svc_status() {
+    json_guard
+    local pid node conns rules
+    pid=$(svc_pid)
+    if [[ -n "$pid" ]]; then
+        ok "运行中 (pid $pid)"
+    else
+        warn "未运行"
+    fi
+    # ports
+    local ports
+    ports=$(ss -ltnp 2>/dev/null | awk '{print $4}' | grep -oE ':[0-9]+$' | tr -d ':' | sort -u | tr '\n' ' ')
+    say "  监听端口: ${ports:-<none>}"
+    # controller
+    if ctrl_get /version >/dev/null 2>&1; then
+        say "  控制器:   http://$(controller_addr) ↑"
+    else
+        say "  控制器:   ↓"
+    fi
+    # current exit node
+    node=$(node_group 2>/dev/null)
+    if [[ -n "$node" ]]; then
+        local now
+        now=$(ctrl_get "/proxies/$(jq_uri "$node")" 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('now',''))" 2>/dev/null)
+        say "  出口节点: $now  (组: $node)"
+    fi
+    # live connections count
+    conns=$(ctrl_get /connections 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(len(d.get('connections') or []))" 2>/dev/null)
+    say "  活跃连接: ${conns:-?}"
+}
+
+svc_log() {
+    [[ -f "$LOG" ]] || die "无日志: $LOG (mihomo 是否启动过?)"
+    if [[ "${1:-}" == "-f" || "${1:-}" == "--follow" ]]; then
+        tail -f "$LOG"
+    else
+        tail -n "${1:-40}" "$LOG"
+    fi
+}

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# proxy — a portable, self-contained CLI for managing the mihomo (Clash.Meta) core.
+#
+# All code lives in this directory (~/scripts/proxy/). Nothing is written elsewhere
+# except: a one-line pointer hook appended to ~/.bashrc (not code), and runtime
+# state under ~/.config/mihomo/. Designed to be cloned from GitHub and work on a
+# fresh machine: it detects/downloads mihomo, bootstraps config, and never assumes
+# sudo, an existing binary, or pre-existing config files.
+#
+# Usage: proxy <command> [args...]
+#   install/init   set mihomo up (detect → brew → GitHub download)
+#   start|stop|restart|status|log   lifecycle
+#   env on|off     toggle proxy env vars in the current shell (via .bashrc hook)
+#   node list|test|use   pick/switch exit nodes (controller API)
+#   merge list|add|rm|diff|apply   manage prepend rules (safe: validate then reload)
+#   sub set <url>|refresh   subscription management (refresh re-applies merge)
+#   tun on|off|--setup-nopasswd   transparent TUN (needs root)
+#   doctor         environment health check
+#   upgrade|uninstall
+set -o pipefail
+
+# --- resolve this script's real dir (follow the ~/.local/bin symlink) ---
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/detect.sh
+source "$SCRIPT_DIR/lib/detect.sh"
+
+load() { # load <module-name>  -> sources lib/<name>.sh
+    local f="$SCRIPT_DIR/lib/$1.sh"
+    [[ -f "$f" ]] || die "内部错误: 缺少模块 $1 ($f)"
+    # shellcheck source=/dev/null
+    source "$f"
+}
+
+usage() {
+    sed -n 's/^#   /  /p' "$0" 2>/dev/null | sed '1iCommands:'
+    cat <<'EOF'
+
+Run `proxy <command> -h` for command-specific help. Project home: ~/scripts/proxy/
+EOF
+}
+
+cmd=$1; shift || true
+case $cmd in
+    install)        load install; proxy_install "$@" ;;
+    init)           load install; proxy_init "$@" ;;
+    doctor)         load install; proxy_doctor "$@" ;;
+    upgrade)        load install; proxy_upgrade "$@" ;;
+    uninstall)      load install; proxy_uninstall "$@" ;;
+
+    start)          load service; svc_start "$@" ;;
+    stop)           load service; svc_stop "$@" ;;
+    restart)        load service; svc_restart "$@" ;;
+    status)         load service; svc_status "$@" ;;
+    log)            load service; svc_log "$@" ;;
+
+    env)            load env; env_cmd "$@" ;;
+
+    node)           load node; node_cmd "$@" ;;
+    merge)          load merge; merge_cmd "$@" ;;
+    sub)            load sub; sub_cmd "$@" ;;
+    tun)            load tun; tun_cmd "$@" ;;
+
+    _login)         load env; env_login ;;     # internal: called by .bashrc hook
+
+    -h|--help|help|"") usage ;;
+    *) die "未知命令: $cmd (运行 proxy 查看帮助)" ;;
+esac

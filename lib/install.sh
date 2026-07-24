@@ -87,7 +87,9 @@ proxy_init() {
     [[ -n "$bin" && -x "$bin" ]] || die "未设置 mihomo 二进制 (先 proxy install)"
     mkdir -p "$CONF_DIR"
 
+    local first=0
     if [[ ! -f "$CONFIG" ]]; then
+        first=1
         info "初始化 config.yaml (来自模板)"
         if [[ -f "$SCRIPT_DIR/templates/config.minimal.yaml" ]]; then
             cp "$SCRIPT_DIR/templates/config.minimal.yaml" "$CONFIG"
@@ -96,7 +98,7 @@ proxy_init() {
         fi
         if [[ -t 0 ]]; then
             local sub
-            printf '[proxy] 粘贴订阅链接 (可留空跳过, 之后用 proxy sub set): '
+            printf '[proxy] 粘贴订阅链接 (可留空跳过, 之后用 proxy sub add <name> <url>): '
             read -r sub
             [[ -n "$sub" ]] && conf_set sub_url "$sub"
         fi
@@ -106,7 +108,15 @@ proxy_init() {
     install_symlink
     bashrc_hook_install
     if mihomo_test "$CONFIG"; then ok "配置校验通过"; else warn "配置校验未通过; 检查 $CONFIG"; fi
-    ok "完成。启动: proxy start   开当前shell代理: eval \"\$(proxy env show)\""
+
+    # first-time init: if a subscription URL was given, pull it now so the config
+    # is populated and mihomo starts in one shot (refresh starts it if down).
+    if (( first )) && { [[ -n "$(conf_get sub_url)" ]] || [[ -f "$CONF_DIR/subs.conf" ]]; }; then
+        info "首次初始化, 拉取订阅并启动 ..."
+        ( source "$SCRIPT_DIR/lib/sub.sh"; sub_refresh ) || warn "订阅拉取未成功; 之后可: proxy sub refresh"
+    else
+        ok "完成。启动: proxy start   开当前 shell 代理: eval \"\$(proxy env show)\""
+    fi
 }
 
 install_symlink() {

@@ -110,6 +110,7 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy env on \| off \| show` | 代理环境变量开关（`.bashrc` 钩子注入；`show` 供 `eval`） |
 | `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点：`list` 带序号过滤信息节点；`use` 支持序号/子串/无参交互 |
 | `proxy merge list \| add '<RULE>' \| rm '<PAT>' \| diff \| apply` | 前置规则管理（安全） |
+| `proxy region list \| apply \| add \| rm \| set` | 地区自动组（fallback 粘滞、可配置屏蔽名单、默认 60s 健康检查） |
 | `proxy sub add <name> <URL>` | 添加/更新命名订阅 |
 | `proxy sub rm <name> \| list \| show [name]` | 删除 / 列出（活跃标记，token 脱敏）/ 查看 |
 | `proxy sub use <name> [--no-refresh]` | 切换活跃订阅并立即拉取应用 |
@@ -171,6 +172,32 @@ proxy merge rm 'hf-mirror'  # 按子串删行
 
 安全：注入前自动探测原 `rules:` 缩进、写入临时文件、`mihomo -t` 校验通过才替换，失败还原、
 绝不杀进程。详见下「安全模式」。
+
+## 地区自动组（region）
+
+在订阅的大列表之上生成**按地区自动故障转移**的组。代码不含任何地区/屏蔽预设，
+一切通过 CLI 配置：用 `region add` 定义地区（按添加顺序链成 `🚀 自动`，前者优先），
+用 `region set exclude` 定义屏蔽名单。地区组内 `fallback` 粘滞切换（当前节点挂掉才换
+同地区下一个，不随测速抖动乱跳），健康检查间隔默认 60s（订阅通常 300s+）。
+
+```bash
+# 例: SG/美国 优先 + 屏蔽 HK 和信息假节点
+proxy region add SG '(?i)(singapore|🇸🇬)'
+proxy region add 美国 '(?i)(united states|🇺🇸|america)'
+proxy region set exclude '(?i)(hong[ -]?kong|🇭🇰|\bhk\b|剩余|重置|套餐|到期|流量)'
+proxy node use '🚀 自动'                # 把选择组切到地区链
+
+proxy region apply                      # 手动重放（校验+备份+热重载，同 merge 安全模式）
+proxy region rm 美国                    # 删地区（删光 = 从配置清除地区组）
+proxy region set interval 30            # 更激进的健康检查
+proxy region set exclude ''             # 清空屏蔽名单
+proxy region list                       # 地区、设置、各组实时选中/节点数
+```
+
+实现要点：地区组用 `include-all: true` + `filter` 正则，**不枚举节点名**，订阅刷新改名/增删
+节点都自动适应；`sub refresh` 会自动重放（与 merge 同钩子）。地区定义在
+`~/.config/mihomo/regions.conf`（`name<TAB>regex` 每行一个），设置存 `proxy.conf` 的
+`region_interval` / `region_url` / `region_exclude`。
 
 ---
 

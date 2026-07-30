@@ -13,6 +13,7 @@
 #   env on|off     toggle proxy env vars in the current shell (via .bashrc hook)
 #   node list|test|use   pick/switch exit nodes (controller API)
 #   merge list|add|rm|diff|apply   manage prepend rules (safe: validate then reload)
+#   region list|apply|add|rm|set   region auto-groups (fallback sticky, HK excluded, 60s checks)
 #   sub add|rm|list|use|show|refresh   multi-subscription management (refresh re-applies merge)
 #   tun on|off|--setup-nopasswd   transparent TUN (needs root)
 #   check          system proxy & connectivity check
@@ -67,6 +68,7 @@ case $cmd in
 
     node)           load node; node_cmd "$@" ;;
     merge)          load merge; merge_cmd "$@" ;;
+    region)         load region; region_cmd "$@" ;;
     sub)            load sub; sub_cmd "$@" ;;
     tun)            load tun; tun_cmd "$@" ;;
     check)          load check; proxy_check "$@" ;;

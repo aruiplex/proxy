@@ -174,6 +174,16 @@ sub_refresh() {
         fi
     fi
 
+    # re-apply region groups so they (and the ban list) survive the refresh
+    if [[ -f "$CONF_DIR/regions.conf" ]]; then
+        # shellcheck source=region.sh
+        source "$SCRIPT_DIR/lib/region.sh"
+        if [[ -n "$(_region_names)" ]]; then
+            info "重新应用 region 组 ..."
+            region_apply || warn "region 组应用失败 (稍后重试: proxy region apply)"
+        fi
+    fi
+
     # apply the on-disk config: hot-reload, or restart if controller is down
     # shellcheck source=service.sh
     source "$SCRIPT_DIR/lib/service.sh"

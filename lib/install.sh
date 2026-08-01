@@ -68,15 +68,17 @@ proxy_install() {
     elif [[ "$via" == github ]]; then
         local b; b=$(install_github); conf_set bin "$b"; conf_set install_method github
     else
-        # auto tiered: existing -> brew -> github
-        local found
+        # auto tiered: existing -> github -> brew
+        local found b
         if found=$(mihomo_bin 2>/dev/null) && [[ -x "$found" ]]; then
             info "已检测到 mihomo: $found"; conf_set bin "$found"; conf_set install_method existing
+        elif b=$(install_github 2>/dev/null); then
+            conf_set bin "$b"; conf_set install_method github
         elif install_brew >/dev/null 2>&1; then
-            local b; b=$(command -v mihomo 2>/dev/null || printf '%s' "$HOME/.brew/bin/mihomo")
+            b=$(command -v mihomo 2>/dev/null || printf '%s' "$HOME/.brew/bin/mihomo")
             conf_set bin "$b"; conf_set install_method brew
         else
-            local b; b=$(install_github); conf_set bin "$b"; conf_set install_method github
+            die "自动安装失败: 无法通过 GitHub 或 Brew 下载安装 mihomo"
         fi
     fi
     proxy_init
@@ -126,34 +128,58 @@ install_symlink() {
 }
 
 bashrc_hook_install() {
-    local rc="$HOME/.bashrc" hook
-    hook=$(printf '\n# >>> proxy (auto) >>>\n[[ $- == *i* ]] && [ -x "%s/proxy" ] && eval "$( "%s/proxy" _login 2>/dev/null )"\n# <<< proxy (auto) <<<\n' "$SCRIPT_DIR" "$SCRIPT_DIR")
-    touch "$rc"
-    if grep -q '^# >>> proxy (auto) >>>' "$rc" 2>/dev/null; then
-        python3 - "$rc" "$hook" <<'PY'
+    local rcs=("$HOME/.bashrc")
+    [[ -f "$HOME/.zshrc" || "$SHELL" == *"zsh"* ]] && rcs+=("$HOME/.zshrc")
+
+    local hook
+    hook=$(cat <<EOF
+
+# >>> proxy (auto) >>>
+proxy() {
+    if [[ "\$1" == "env" && ( "\$2" == "on" || "\$2" == "off" ) ]]; then
+        "$SCRIPT_DIR/proxy" "\$@"
+        eval "\$( "$SCRIPT_DIR/proxy" env show )"
+    else
+        "$SCRIPT_DIR/proxy" "\$@"
+    fi
+}
+[[ \$- == *i* ]] && [ -f "\$HOME/.config/mihomo/env.state" ] && [ "\$(cat "\$HOME/.config/mihomo/env.state" 2>/dev/null)" = "on" ] && [ -x "$SCRIPT_DIR/proxy" ] && eval "\$( "$SCRIPT_DIR/proxy" _login 2>/dev/null )"
+# <<< proxy (auto) <<<
+EOF
+)
+
+    local rc
+    for rc in "${rcs[@]}"; do
+        touch "$rc"
+        if grep -q '^# >>> proxy (auto) >>>' "$rc" 2>/dev/null; then
+            python3 - "$rc" "$hook" <<'PY'
 import sys, re
 rc, hook = sys.argv[1], sys.argv[2]
 t = open(rc).read()
 t = re.sub(r'\n?# >>> proxy \(auto\) >>>.*?# <<< proxy \(auto\) <<<\n?', hook, t, flags=re.S)
 open(rc, 'w').write(t)
 PY
-    else
-        printf '%s\n' "$hook" >> "$rc"
-    fi
-    info "已管理 ~/.bashrc 钩子 (登录自启 + 代理环境变量)"
+        else
+            printf '%s\n' "$hook" >> "$rc"
+        fi
+        info "已管理 $rc 钩子 (proxy 函数包装 + 登录自启 + 0 毫秒启动优化)"
+    done
 }
 
 bashrc_hook_remove() {
-    local rc="$HOME/.bashrc"
-    [[ -f "$rc" ]] || return 0
-    python3 - "$rc" <<'PY'
+    local rcs=("$HOME/.bashrc" "$HOME/.zshrc")
+    local rc
+    for rc in "${rcs[@]}"; do
+        [[ -f "$rc" ]] || continue
+        python3 - "$rc" <<'PY'
 import sys, re
 rc = sys.argv[1]
 t = open(rc).read()
 t = re.sub(r'\n?# >>> proxy \(auto\) >>>.*?# <<< proxy \(auto\) <<<\n?', '\n', t, flags=re.S)
 open(rc, 'w').write(t)
 PY
-    info "已从 ~/.bashrc 移除 proxy 钩子"
+        info "已从 $rc 移除 proxy 钩子"
+    done
 }
 
 proxy_doctor() { detect_all; }

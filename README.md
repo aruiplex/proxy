@@ -3,7 +3,7 @@
 一个自包含的 **bash** 命令行工具。从 GitHub 克隆 `~/scripts/proxy/` 后，在**全新机器**上即可
 完整管理 mihomo 内核：检测/下载二进制、引导配置、启停、节点切换、多订阅管理、订阅刷新、
 规则合并、TUN 透明代理、代理环境变量注入。**所有代码只在 `~/scripts/proxy/`**；`~/.bashrc`
-只追加一行指回脚本的钩子（非代码），运行时状态写在 `~/.config/mihomo/`。
+或 `~/.zshrc` 只追加指回脚本的钩子函数（非代码），运行时状态写在 `~/.config/mihomo/`。
 
 设计原则：**不盲猜**——mihomo 没下就分级下载；没 sudo 就把 TUN 降级提示；无配置就从模板
 引导；订阅链接首次交互询问；控制器异常时自动诊断根因而非甩一句"重启"。
@@ -30,14 +30,13 @@ git clone <repo> ~/scripts/proxy
 
 这一步会自动：
 
-- **找 mihomo 二进制**——按顺序：① PATH 与常见路径里已有的 mihomo；② `brew`（若 brew 可用且
-  homebrew-core 有 `mihomo` formula，则 `brew install mihomo`）；③ 都没有就从 **GitHub release**
-  下载（按 `uname -m` + CPU 微架构选 `amd64-v3`/`compatible`/`arm64` 资源），解压到 `~/.local/bin/mihomo`。
-  想指定来源：`proxy install --via brew|github|gz:FILE` 或 `--bin /path/to/mihomo`。
+- **找 mihomo 二进制**——按顺序：① PATH 与常见路径里已有的 mihomo；② **GitHub release**
+  下载（按 `uname -m` + CPU 微架构自动选 `amd64-v3`/`compatible`/`arm64` 资源），解压到 `~/.local/bin/mihomo`；③ `brew`（若已安装 brew 且 homebrew-core 有 `mihomo` formula，则 `brew install mihomo`）。
+  想指定来源：`proxy install --via github|brew|gz:FILE` 或 `--bin /path/to/mihomo`。
 - **引导配置**——首次无 `config.yaml` 时从模板复制（`mixed-port: 7890`、`external-controller`、
   TUN 块、fake-ip DNS、空规则）。交互终端会提示粘贴订阅链接（可留空跳过）。
 - **登记到 `proxy.conf`**、软链 `~/.local/bin/proxy` → 本脚本（之后直接敲 `proxy`）、往 `~/.bashrc`
-  追加登录自启 + 代理变量钩子、`mihomo -t` 校验。
+  及 `~/.zshrc` 追加 Shell 函数包装 + 登录自启 + 0ms 启动优化钩子、`mihomo -t` 校验。
 - 如果你粘了订阅链接，会**顺手拉取并启动**（`sub refresh` 会校验→替换→重新前置 merge→热重载，
   mihomo 没跑就自动起）。
 
@@ -50,13 +49,12 @@ git clone <repo> ~/scripts/proxy
 ### 3. 让当前 shell 走代理 + 验证
 
 ```bash
-proxy env on && eval "$(proxy env show)"   # 翻开当前 shell 的代理开关, 并立即注入
-proxy check                                 # 测: 系统代理状态 + 外网连通 + 出口 IP
-proxy status                                # 看: 进程/端口/控制器/出口节点
+proxy env on      # 开启代理环境变量（当前 shell 及之后所有新开终端瞬间无感生效！）
+proxy check       # 测: 系统代理状态 + 外网连通 + 出口 IP
+proxy status      # 看: 进程/端口/控制器/出口节点
 ```
 
-`proxy env on` 把开关写入 `~/.config/mihomo/env.state`，**之后每个新开的交互式 shell 自动注入**
-代理变量（靠 `.bashrc` 钩子）；当前这个已开的 shell 用 `eval "$(proxy env show)"` 立即生效。
+`proxy env on` 把开关写入 `~/.config/mihomo/env.state`。通过自动注入的 Shell 包装函数，**当前 Shell 及未来新建终端无需手敲 `eval`，直接无感生效**；当代理关闭时，新开终端具备 0ms 开销快路，绝不拖慢终端启动。
 
 ### 4. 选个出口节点
 
@@ -70,13 +68,14 @@ proxy node use           # 无参: 装了 fzf 模糊搜, 没装就序号菜单
 ### 完成。日常速查
 
 ```bash
-proxy status            # 看状态
-proxy node use         # 换节点
-proxy env off          # 关代理(新 shell 不再注入; 当前 shell: eval "$(proxy env show)")
-proxy sub refresh      # 更新订阅(刷新后 merge 规则自动重新前置)
-proxy merge add 'DOMAIN-SUFFIX,foo.com,DIRECT'   # 加一条直连规则
-proxy log -f           # 实时看日志
-proxy doctor           # 环境体检
+proxy status                                     # 看状态
+proxy node use                                   # 换节点
+proxy env off                                    # 关代理(当前 shell 及新 shell 自动清除)
+proxy sub refresh                                # 更新订阅(刷新后 merge 规则自动重新前置)
+proxy merge add direct google.com                # 快捷加一条直连规则 (或加 'DOMAIN-SUFFIX,foo.com,DIRECT')
+proxy region preset                              # 一键加载预设地区分组 (HK, SG, JP, US) 与排除规则
+proxy log -f                                     # 实时看日志
+proxy doctor                                     # 环境体检
 ```
 
 ---
@@ -87,9 +86,9 @@ proxy doctor           # 环境体检
 
 | 命令 | 含义 |
 |------|------|
-| `proxy install` | 自动：已有 mihomo → brew → GitHub |
-| `proxy install --via brew` | 强制 `brew install mihomo` |
+| `proxy install` | 自动：已有 mihomo → GitHub Release → brew |
 | `proxy install --via github` | 强制从 GitHub release 下载（arch 自适应） |
+| `proxy install --via brew` | 强制 `brew install mihomo` |
 | `proxy install --via gz:/path/mihomo.gz` | 用你已有的 gz 包解压安装 |
 | `proxy install --bin /path/mihomo` | 接管一个已存在的二进制，不下载 |
 
@@ -102,15 +101,15 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 
 | 命令 | 说明 |
 |------|------|
-| `proxy install [--bin PATH] [--via brew\|github\|gz:FILE]` | 分级安装/接管 + 初始化 |
+| `proxy install [--bin PATH] [--via github\|brew\|gz:FILE]` | 分级安装/接管 + 初始化 |
 | `proxy init` | 仅初始化配置 + 钩子（已有二进制） |
 | `proxy start \| stop \| restart` | 启停（nohup 直连二进制；brew 感知：先 `brew services stop`，清外来实例，精确匹配不误杀） |
 | `proxy status` | 进程/端口/控制器/出口节点/活跃连接；**控制器 ↓ 时自动诊断**（见故障排查） |
 | `proxy log [-f]` | 日志（`-f` 跟随） |
-| `proxy env on \| off \| show` | 代理环境变量开关（`.bashrc` 钩子注入；`show` 供 `eval`） |
+| `proxy env on \| off \| show` | 代理环境变量开关（当前 Shell 及新 Shell 自动无感生效，带 0ms 启动开销优化） |
 | `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点：`list` 带序号过滤信息节点；`use` 支持序号/子串/无参交互 |
-| `proxy merge list \| add '<RULE>' \| rm '<PAT>' \| diff \| apply` | 前置规则管理（安全） |
-| `proxy region list \| apply \| add \| rm \| set` | 地区自动组（fallback 粘滞、可配置屏蔽名单、默认 60s 健康检查） |
+| `proxy merge list \| add '<RULE>' \| add direct\|proxy\|reject <domain> \| rm '<PAT>' \| diff \| apply` | 前置规则管理（安全，支持快捷语法） |
+| `proxy region list \| apply \| preset \| add <name> ['<regex>'] \| rm \| set` | 地区自动组（支持快捷别名如 HK/SG/US/JP、一键预设与快捷排除） |
 | `proxy sub add <name> <URL>` | 添加/更新命名订阅 |
 | `proxy sub rm <name> \| list \| show [name]` | 删除 / 列出（活跃标记，token 脱敏）/ 查看 |
 | `proxy sub use <name> [--no-refresh]` | 切换活跃订阅并立即拉取应用 |
@@ -126,13 +125,10 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 
 ## 代理环境变量注入
 
-子进程无法直接改父 shell 的环境变量。本工具在 `~/.bashrc` 注入一行钩子，每个交互式 shell
-启动时 `eval "$(proxy _login 2>/dev/null)"`：若 mihomo 未运行则静默自启，再按
-`~/.config/mihomo/env.state`（`on`/`off`）`export`/`unset` 代理变量（`http_proxy`/
-`https_proxy`/`all_proxy` + 大写变体 + `no_proxy`）。
+子进程无法直接改父 shell 的环境变量。本工具在 `~/.bashrc` 及 `~/.zshrc` 注入 `proxy()` Shell 函数包装以及极速开销检测：
 
-- `proxy env on` / `off` 翻转开关，**新 shell 自动生效**。
-- 当前 shell 立即生效：`eval "$(proxy env show)"`。
+- **无感实时生效**：执行 `proxy env on` 或 `off` 时，Shell 函数会在当前 Shell 内直接更新 `http_proxy`/`https_proxy`/`all_proxy`（+ 大写变体及 `no_proxy`），无需手动复制执行 `eval`！
+- **0 毫秒启动开销**：当代理开关关闭或未初始化时，新打开的终端会直接跳过后台子进程检测，零延迟。
 - 地址取自 `proxy.conf` 的 `proxy_addr`，否则解析 `config.yaml` 的 `mixed-port`，默认 `127.0.0.1:7890`。
 
 ---
@@ -162,36 +158,50 @@ proxy sub rm airportB           # 删除
 config 后，`proxy sub refresh` 会自动重新前置。
 
 ```bash
+# 支持快捷域名规则语法：
+proxy merge add direct google.com         # 自动扩展为 DOMAIN-SUFFIX,google.com,DIRECT
+proxy merge add proxy github.com          # 自动扩展为 DOMAIN-SUFFIX,github.com,PROXIES
+proxy merge add reject ads.com            # 自动扩展为 DOMAIN-SUFFIX,ads.com,REJECT
+
+# 也支持完整 Clash 规则语法：
 proxy merge add 'DOMAIN-SUFFIX,hf-mirror.com,DIRECT'
-proxy merge add 'DOMAIN-SUFFIX,horologium-ai.chat,DIRECT'
+
 proxy merge list            # 查 merge.yaml 里的规则
 proxy merge diff            # 对比 merge.yaml 与 config 已注入块
 proxy merge apply           # 手动重新注入+校验+重载
-proxy merge rm 'hf-mirror'  # 按子串删行
+proxy merge rm 'google.com'  # 按子串删行
 ```
 
 安全：注入前自动探测原 `rules:` 缩进、写入临时文件、`mihomo -t` 校验通过才替换，失败还原、
 绝不杀进程。详见下「安全模式」。
 
+---
+
 ## 地区自动组（region）
 
-在订阅的大列表之上生成**按地区自动故障转移**的组。代码不含任何地区/屏蔽预设，
-一切通过 CLI 配置：用 `region add` 定义地区（按添加顺序链成 `🚀 自动`，前者优先），
-用 `region set exclude` 定义屏蔽名单。地区组内 `fallback` 粘滞切换（当前节点挂掉才换
-同地区下一个，不随测速抖动乱跳），健康检查间隔默认 60s（订阅通常 300s+）。
+在订阅的大列表之上生成**按地区自动故障转移**的组。支持内置快捷别名（无需手写 Regex）与一键预设：
 
 ```bash
-# 例: SG/美国 优先 + 屏蔽 HK 和信息假节点
-proxy region add SG '(?i)(singapore|🇸🇬)'
-proxy region add 美国 '(?i)(united states|🇺🇸|america)'
-proxy region set exclude '(?i)(hong[ -]?kong|🇭🇰|\bhk\b|剩余|重置|套餐|到期|流量)'
-proxy node use '🚀 自动'                # 把选择组切到地区链
+# 方式 1：一键预设（推荐，自动生成 HK, SG, JP, US 组及默认排除规则）
+proxy region preset
 
-proxy region apply                      # 手动重放（校验+备份+热重载，同 merge 安全模式）
-proxy region rm 美国                    # 删地区（删光 = 从配置清除地区组）
-proxy region set interval 30            # 更激进的健康检查
-proxy region set exclude ''             # 清空屏蔽名单
-proxy region list                       # 地区、设置、各组实时选中/节点数
+# 方式 2：使用内置快捷别名添加（无需手写复杂的正则表达式）
+proxy region add SG                       # 自动匹配新加坡节点
+proxy region add US                       # 自动匹配美国节点
+proxy region add HK                       # 自动匹配香港节点
+proxy region add JP                       # 自动匹配日本节点
+proxy region add TW / KR / UK             # 支持台湾、韩国、英国等预设
+
+# 方式 3：自定义正则（面向特殊需求）
+proxy region add 自定义组 '(?i)(custom|regex)'
+
+# 极简排除规则设置 (exclude)
+proxy region set exclude default          # 一键排除 HK 及机场流量/官网提示节点
+proxy region set exclude hk               # 排除 HK 节点
+proxy region set exclude clear            # 清空排除规则
+
+proxy node use '🚀 自动'                  # 把选择组切到地区链
+proxy region list                         # 查看地区、设置、各组实时状态
 ```
 
 实现要点：地区组用 `include-all: true` + `filter` 正则，**不枚举节点名**，订阅刷新改名/增删
@@ -252,7 +262,7 @@ proxy tun --setup-nopasswd  # 写 /etc/sudoers.d/proxy-mihomo(仅限单条 mihom
 Selector/URLTest 类型，查 `config.yaml`。
 
 **机器重启后代理没了**：mihomo 不开机自启靠 `systemd --user`（多数服务器无）；本工具用
-`~/.bashrc` 登录钩子——登录首个交互式 shell 时若 mihomo 没跑会静默自启。
+`~/.bashrc` / `~/.zshrc` 登录钩子——登录首个交互式 shell 时若 mihomo 没跑会静默自启。
 
 ---
 
@@ -272,7 +282,7 @@ Selector/URLTest 类型，查 `config.yaml`。
   env.state                      # on/off
   mihomo.log
 ~/.local/bin/proxy -> ~/scripts/proxy/proxy   # PATH 软链
-~/.bashrc                        # +1 行钩子块
+~/.bashrc / ~/.zshrc             # +钩子函数块 (proxy 函数包装 + 0ms 启动检测)
 ```
 
 ---
@@ -281,7 +291,7 @@ Selector/URLTest 类型，查 `config.yaml`。
 
 - 必需：`bash` 4+、`curl`、`awk`、`sed`、`grep`。
 - JSON 解析（`status`/`node`/`sub`）：`python3`（近通用）；缺则相应命令提示安装。
-- 安装可选：`brew`（tier-2 安装）、`jq`（加速 JSON，可选）、`fzf`（`proxy node use` 交互模糊选择，可选；无则用序号菜单）。
+- 安装可选：`brew`（tier-3 安装）、`jq`（加速 JSON，可选）、`fzf`（`proxy node use` 交互模糊选择，可选；无则用序号菜单）。
 - TUN：`sudo` + `python3`；无 sudo 时 `tun` 命令降级提示。
 
 ---
@@ -289,7 +299,7 @@ Selector/URLTest 类型，查 `config.yaml`。
 ## 卸载
 
 ```bash
-proxy uninstall          # 移除 .bashrc 钩子 + 软链; 配置目录保留(会问是否同时删二进制)
+proxy uninstall          # 移除 .bashrc/.zshrc 钩子 + 软链; 配置目录保留(会问是否同时删二进制)
 ```
 
 手动：`rm -rf ~/scripts/proxy ~/.local/bin/proxy`；保留或删 `~/.config/mihomo/` 视需要。

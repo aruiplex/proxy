@@ -239,9 +239,27 @@ except Exception: print()
     ctrl_up || info "(控制器未启动, 仅显示静态配置)"
 }
 
+_region_preset_regex() {
+    local n; n=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$n" in
+        hk|hongkong|香港)     printf '(?i)(hong[ -]?kong|🇭🇰|\\bhk\\b)' ;;
+        sg|singapore|新加坡)  printf '(?i)(singapore|🇸🇬|\\bsg\\b|狮城)' ;;
+        us|usa|america|美国) printf '(?i)(united states|🇺🇸|america|\\bus\\b|美)' ;;
+        jp|japan|日本)       printf '(?i)(japan|🇯🇵|\\bjp\\b|东京|大阪)' ;;
+        tw|taiwan|台湾)      printf '(?i)(taiwan|🇹🇼|\\btw\\b|台北)' ;;
+        kr|korea|韩国)       printf '(?i)(korea|🇰🇷|\\bkr\\b|首尔)' ;;
+        uk|london|英国)      printf '(?i)(united kingdom|🇬🇧|\\buk\\b|伦敦)' ;;
+        *) return 1 ;;
+    esac
+}
+
 region_add() {
     local name=$1 regex=$2
-    [[ -n "$name" && -n "$regex" ]] || die "用法: proxy region add <name> '<regex>'  例: proxy region add 日本 '(?i)(japan|🇯🇵)'"
+    [[ -n "$name" ]] || die "用法: proxy region add <name> ['<regex>']  (内置快捷别名: HK, SG, US, JP, TW, KR, UK)"
+    if [[ -z "$regex" ]]; then
+        regex=$(_region_preset_regex "$name") || die "未知地区简写 '$name'; 请提供正则表达式或使用内置别名: HK, SG, US, JP, TW, KR, UK"
+        info "自动应用预设正则: $regex"
+    fi
     [[ "$name" != *$'\t'* && "$name" != *$'\n'* ]] || die "地区名不能含制表符/换行"
     printf '%s' "$regex" | python3 -c "import sys,re; re.compile(sys.stdin.read())" 2>/dev/null \
         || die "regex 无法编译: $regex"
@@ -266,16 +284,41 @@ region_rm() {
 
 region_set() {
     local k=$1 v=${2-}
-    [[ -n "$k" ]] || die "用法: proxy region set interval|url|exclude <value>  (exclude 留空 = 不屏蔽)"
+    [[ -n "$k" ]] || die "用法: proxy region set interval|url|exclude <value>  (exclude 支持快捷预设: default | hk | clear)"
     case "$k" in
         interval) [[ "$v" =~ ^[0-9]+$ ]] && (( v >= 10 )) || die "interval 需为 >=10 的秒数" ;;
         url)      [[ "$v" =~ ^https?:// ]] || die "url 需以 http(s):// 开头" ;;
-        exclude)  [[ -z "$v" ]] || printf '%s' "$v" | python3 -c "import sys,re; re.compile(sys.stdin.read())" 2>/dev/null \
-                      || die "regex 无法编译: $v" ;;
+        exclude)
+            case "$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')" in
+                default|std|standard)
+                    v='(?i)(hong[ -]?kong|🇭🇰|\bhk\b|剩余|重置|套餐|到期|流量|官网|中转|倍率|订阅|通知)'
+                    info "应用默认排除规则 (HK 及机场流量/官网节点)" ;;
+                hk)
+                    v='(?i)(hong[ -]?kong|🇭🇰|\bhk\b|剩余|重置|套餐|到期|流量)'
+                    info "应用 HK 及流量节点排除规则" ;;
+                clear|none|off)
+                    v=''
+                    info "已清空排除规则" ;;
+            esac
+            [[ -z "$v" ]] || printf '%s' "$v" | python3 -c "import sys,re; re.compile(sys.stdin.read())" 2>/dev/null \
+                          || die "regex 无法编译: $v" ;;
         *) die "未知设置项: $k (可选: interval|url|exclude)" ;;
     esac
     conf_set "region_$k" "$v"
     ok "region_$k = ${v:-(空, 不屏蔽)}"
+    region_apply
+}
+
+region_preset() {
+    _region_ensure
+    say "${C_B}一键加载常用地区 (HK, SG, JP, US) 与默认排除规则...${C_N}"
+    awk -F'\t' 'NF && $1 !~ /^#/ {print $1}' "$REGIONS_FILE" > "$REGIONS_FILE.bak" 2>/dev/null || true
+    region_add HK >/dev/null 2>&1 || true
+    region_add SG >/dev/null 2>&1 || true
+    region_add JP >/dev/null 2>&1 || true
+    region_add US >/dev/null 2>&1 || true
+    conf_set "region_exclude" '(?i)(hong[ -]?kong|🇭🇰|\bhk\b|剩余|重置|套餐|到期|流量|官网|中转|倍率)'
+    ok "一键预设应用完成 (包含 HK, SG, JP, US 分组与默认排除规则)"
     region_apply
 }
 
@@ -287,7 +330,8 @@ region_cmd() {
         add)   region_add "$@" ;;
         rm)    region_rm "$@" ;;
         set)   region_set "$@" ;;
-        -h|--help|"") say "用法: proxy region apply | list | add <name> '<regex>' | rm <name> | set interval|url|exclude <value>" ;;
+        preset) region_preset "$@" ;;
+        -h|--help|"") say "用法: proxy region apply | list | preset | add <name> ['<regex>'] | rm <name> | set interval|url|exclude <value>" ;;
         *) die "proxy region: 未知子命令 $sub" ;;
     esac
 }

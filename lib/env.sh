@@ -48,13 +48,11 @@ env_cmd() {
     case "$sub" in
         on)
             mkdir -p "$CONF_DIR"; printf 'on\n' > "$ENV_STATE"
-            ok "代理环境变量已开启 (新 shell 自动生效)"
-            info "当前 shell 立即生效: eval \"\$(proxy env show)\""
+            ok "代理环境变量已开启 (当前 shell 及新 shell 已自动生效)"
             ;;
         off)
             mkdir -p "$CONF_DIR"; printf 'off\n' > "$ENV_STATE"
-            ok "代理环境变量已关闭 (新 shell 自动不注入)"
-            info "当前 shell 立即清除: eval \"\$(proxy env show)\""
+            ok "代理环境变量已关闭 (当前 shell 及新 shell 已自动清除)"
             ;;
         show) _env_exports ;;
         -h|--help|"") say "用法: proxy env on|off|show  (开关存 $ENV_STATE, 由 .bashrc 钩子在 shell 启动时应用)" ;;

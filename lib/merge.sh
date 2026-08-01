@@ -42,8 +42,16 @@ merge_list() {
 }
 
 merge_add() {
-    local rule=$1
-    [[ -n "$rule" ]] || die "用法: proxy merge add '<RULE>'  例: DOMAIN-SUFFIX,foo.com,DIRECT"
+    local rule=$1 target=$2
+    if [[ -n "$target" ]]; then
+        case "$(printf '%s' "$rule" | tr '[:upper:]' '[:lower:]')" in
+            direct|d) rule="DOMAIN-SUFFIX,$target,DIRECT" ;;
+            proxy|p)  rule="DOMAIN-SUFFIX,$target,PROXIES" ;;
+            reject|r) rule="DOMAIN-SUFFIX,$target,REJECT" ;;
+            *) die "快捷语法形式: proxy merge add direct|proxy|reject <domain>" ;;
+        esac
+    fi
+    [[ -n "$rule" ]] || die "用法: proxy merge add '<RULE>' 或 proxy merge add direct|proxy|reject <domain>"
     mkdir -p "$CONF_DIR"
     if [[ ! -f "$MERGE_FILE" ]]; then
         if [[ -f "$SCRIPT_DIR/templates/merge.yaml" ]]; then cp "$SCRIPT_DIR/templates/merge.yaml" "$MERGE_FILE"

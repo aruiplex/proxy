@@ -17,6 +17,7 @@
 #   sub add|rm|list|use|show|refresh   multi-subscription management (refresh re-applies merge)
 #   tun on|off|--setup-nopasswd   transparent TUN (needs root)
 #   check          system proxy & connectivity check
+#   route <URL>    test proxy vs direct reachability for a URL
 #   doctor         environment health check
 #   upgrade|uninstall
 set -o pipefail
@@ -72,6 +73,7 @@ case $cmd in
     sub)            load sub; sub_cmd "$@" ;;
     tun)            load tun; tun_cmd "$@" ;;
     check)          load check; proxy_check "$@" ;;
+    route)          load route; route_cmd "$@" ;;
 
     _login)         load env; env_login ;;     # internal: called by .bashrc hook
 

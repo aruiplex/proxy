@@ -107,7 +107,7 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy status` | 进程/端口/控制器/出口节点/活跃连接；**控制器 ↓ 时自动诊断**（见故障排查） |
 | `proxy log [-f]` | 日志（`-f` 跟随） |
 | `proxy env on \| off \| show` | 代理环境变量开关（当前 Shell 及新 Shell 自动无感生效，带 0ms 启动开销优化） |
-| `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点：`list` 带序号过滤信息节点；`use` 支持序号/子串/无参交互 |
+| `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点：`list` 带序号过滤信息节点；`test` 测全部节点延迟排序后可选号直切；`use` 支持序号/子串(唯一则切，多义弹菜单)/无参交互(fzf 或序号菜单) |
 | `proxy merge list \| add '<RULE>' \| add direct\|proxy\|reject <domain> \| rm '<PAT>' \| diff \| apply` | 前置规则管理（安全，支持快捷语法） |
 | `proxy region list \| apply \| preset \| add <name> ['<regex>'] \| rm \| set` | 地区自动组（支持快捷别名如 HK/SG/US/JP、一键预设与快捷排除） |
 | `proxy sub add <name> <URL>` | 添加/更新命名订阅 |
@@ -116,6 +116,7 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy sub refresh [name]` | 刷新活跃（或指定）订阅；自动重新前置 merge |
 | `proxy sub set <URL>` | 旧用法：存为 default + 激活 + 拉取 |
 | `proxy tun on \| off \| --setup-nopasswd` | 透明 TUN（需 root） |
+| `proxy route <URL> [--json]` | URL 路由检测：分别通过代理和直连访问目标 URL，对比连通性与延迟；`--json` 输出机器可读结果 |
 | `proxy check` | 系统代理状态 + 外网连通性 |
 | `proxy doctor` | 环境体检 |
 | `proxy upgrade` | 按 install_method 升级 mihomo |
@@ -269,9 +270,9 @@ Selector/URLTest 类型，查 `config.yaml`。
 ## 文件布局
 
 ```
-~/scripts/proxy/                 # 全部代码(仅此目录)
-  proxy                          # 主入口(子命令分发)
-  lib/{common,detect,install,service,env,merge,node,sub,tun,check}.sh
+~/scripts/proxy/                 # 全部代码（仅此目录）
+  proxy                          # 主入口（子命令分发）
+  lib/{common,detect,install,service,env,merge,node,sub,tun,check,region,route}.sh
   templates/{config.minimal.yaml,merge.yaml}
   README.md
 ~/.config/mihomo/                # 运行时状态(非代码)

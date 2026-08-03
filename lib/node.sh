@@ -36,7 +36,8 @@ node_list() {
     while IFS= read -r n; do printf '%2d) %s\n' "$((i++))" "$n"; done < <(_node_members "$g")
 }
 
-# test every node in a group for latency; prints sorted ascending
+# test every node in a group for latency; prints sorted ascending, then
+# offers interactive node selection so the user can switch immediately.
 node_test() {
     json_guard
     ctrl_require
@@ -46,16 +47,57 @@ node_test() {
     url=$(conf_get test_url); url=${url:-https://www.google.com}
     timeout=$(conf_get test_timeout); timeout=${timeout:-5000}
     info "测延迟 (group=$g, url=$url, timeout=${timeout}ms) ..."
-    _node_members "$g" | while IFS= read -r n; do
+
+    # collect node names and delays in parallel arrays
+    local nodes=() results=()
+    while IFS= read -r n; do
+        nodes+=("$n")
         local out ms
         out=$(ctrl_get "/proxies/$(jq_uri "$n")/delay?url=${url}&timeout=${timeout}" 2>/dev/null)
         ms=$(printf '%s' "$out" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('delay',''))" 2>/dev/null)
         if [[ -n "$ms" ]]; then
-            printf '%6s ms  %s\n' "$ms" "$n"
+            results+=("$(printf '%06d %s' "$ms" "$n")")
         else
-            printf '%6s     %s\n' "x" "$n"
+            results+=("$(printf '999999 %s' "$n")")
         fi
-    done | sort -n
+    done < <(_node_members "$g")
+
+    (( ${#results[@]} > 0 )) || { warn "无可用节点"; return 1; }
+
+    # print sorted ascending, numbered
+    local sorted sorted_lines i
+    mapfile -t sorted_lines < <(printf '%s\n' "${results[@]}" | sort -n)
+    i=1
+    for line in "${sorted_lines[@]}"; do
+        local raw_ms node_name
+        raw_ms=$(printf '%s' "$line" | awk '{print $1}')
+        node_name=$(printf '%s' "$line" | cut -d' ' -f2-)
+        if [[ "$raw_ms" == "999999" ]]; then
+            printf '%2d) %6s     %s\n' "$((i++))" "x" "$node_name"
+        else
+            printf '%2d) %6s ms  %s\n' "$((i++))" "$((10#$raw_ms))" "$node_name"
+        fi
+    done
+
+    # offer interactive selection (only when connected to a terminal)
+    if [[ -t 0 ]]; then
+        say ""
+        local choice chosen_name
+        printf '选择节点序号 (Enter 跳过, q 取消): ' >&2
+        read -r choice </dev/tty 2>/dev/null || { info "跳过"; return 0; }
+        if [[ -z "$choice" ]]; then
+            info "跳过"
+            return 0
+        fi
+        [[ "$choice" == "q" || "$choice" == "Q" ]] && { info "取消"; return 0; }
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#sorted_lines[@]} )); then
+            # extract the actual node name from the sorted list (display order matches sorted_lines)
+            chosen_name=$(printf '%s' "${sorted_lines[$((choice-1))]}" | cut -d' ' -f2-)
+            node_use "$chosen_name"
+        else
+            warn "无效序号: $choice (范围 1-${#sorted_lines[@]})"
+        fi
+    fi
 }
 
 # numbered menu over given names (array); prints chosen name to stdout

@@ -143,6 +143,7 @@ proxy() {
         "$SCRIPT_DIR/proxy" "\$@"
     fi
 }
+command -v complete >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/lib/complete.sh" ] && source "$SCRIPT_DIR/lib/complete.sh"
 [[ \$- == *i* ]] && [ -f "\$HOME/.config/mihomo/env.state" ] && [ "\$(cat "\$HOME/.config/mihomo/env.state" 2>/dev/null)" = "on" ] && [ -x "$SCRIPT_DIR/proxy" ] && eval "\$( "$SCRIPT_DIR/proxy" _login 2>/dev/null )"
 # <<< proxy (auto) <<<
 EOF

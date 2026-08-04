@@ -104,38 +104,72 @@ _svc_diag() {
     fi
 }
 
+_fmt_bytes() { # <raw bytes> -> human size
+    awk -v b="$1" 'BEGIN{
+        if (b >= 1000000000) printf "%.2f GB", b/1e9
+        else if (b >= 1000000) printf "%.1f MB", b/1e6
+        else if (b >= 1000) printf "%.1f KB", b/1e3
+        else printf "%d B", b}'
+}
+
 svc_status() {
     json_guard
-    local pid node conns rules ctrl_up
+    local pid up=0 ver etime mport envstate asub tun conns node now
     pid=$(svc_pid)
     if [[ -n "$pid" ]]; then
-        ok "运行中 (pid $pid)"
+        etime=$(ps -p "$pid" -o etime= 2>/dev/null | sed 's/^ *//')
+        if ctrl_up; then
+            up=1
+            ver=$(ctrl_get /version 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('version',''))" 2>/dev/null)
+            ok "运行中 (pid $pid${ver:+ · $ver}${etime:+ · 已运行 $etime})"
+        else
+            ok "运行中 (pid $pid${etime:+ · 已运行 $etime})"
+        fi
     else
-        warn "未运行"
+        warn "未运行 — 运行 proxy start 启动"
     fi
-    # ports
-    local ports
-    ports=$(ss -ltnp 2>/dev/null | awk '{print $4}' | grep -oE ':[0-9]+$' | tr -d ':' | sort -u | tr '\n' ' ')
-    say "  监听端口: ${ports:-<none>}"
-    # controller
-    if ctrl_up; then
-        ctrl_up=1
-        say "  控制器:   http://$(controller_addr) ↑"
-    else
-        ctrl_up=0
-        warn "  控制器:   ↓"
-        _svc_diag
-    fi
-    # current exit node + live connections (only meaningful when controller is up)
-    if (( ctrl_up )); then
+
+    # exit node + live connections/totals (meaningful only when the controller is up)
+    if (( up )); then
         node=$(node_group 2>/dev/null)
         if [[ -n "$node" ]]; then
-            local now
             now=$(ctrl_get "/proxies/$(jq_uri "$node")" 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('now',''))" 2>/dev/null)
-            say "  出口节点: $now  (组: $node)"
+            say "  出口节点:  ${now:-?}   (组: $node)"
         fi
-        conns=$(ctrl_get /connections 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(len(d.get('connections') or []))" 2>/dev/null)
-        say "  活跃连接: ${conns:-0}"
+        local conns upb down
+        read -r conns upb down < <(ctrl_get /connections 2>/dev/null | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print(len(d.get('connections') or []), d.get('uploadTotal',0), d.get('downloadTotal',0))" 2>/dev/null)
+        say "  活跃连接:  ${conns:-0}"
+        say "  累计流量:  ↑ $(_fmt_bytes "${upb:-0}") / ↓ $(_fmt_bytes "${down:-0}")"
+    fi
+
+    if (( up )); then
+        say "  控制器:    http://$(controller_addr) ↑"
+    else
+        warn "  控制器:    ↓"
+        _svc_diag
+    fi
+
+    mport=$(awk -F': *' '/^mixed-port:/{print $2;exit}' "$CONFIG" 2>/dev/null)
+    say "  代理端口:  ${mport:-<未设置>} (mixed-port)"
+
+    envstate=$(cat "$ENV_STATE" 2>/dev/null)
+    if [[ "$envstate" == "on" ]]; then
+        ok "  代理环境:  on"
+    else
+        info "  代理环境:  off"
+    fi
+
+    asub=$(conf_get active_sub)
+    [[ -n "$asub" ]] && say "  订阅:      $asub"
+
+    tun=$(awk '/^tun:/{f=1} f&&/enable:/{print;exit}' "$CONFIG" 2>/dev/null | grep -o 'true\|false')
+    if [[ "$tun" == "true" ]]; then
+        ok "  TUN:       开启 (透明代理)"
+    else
+        info "  TUN:       关闭"
     fi
 }
 

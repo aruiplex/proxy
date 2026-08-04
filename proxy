@@ -18,6 +18,8 @@
 #   tun on|off|--setup-nopasswd   transparent TUN (needs root)
 #   check          system proxy & connectivity check
 #   route <URL>    test proxy vs direct reachability for a URL
+#   monitor        live traffic monitor (controller /connections, auto-refresh)
+#   ui [on|off]    Web dashboard (metacubexd); on = bind 0.0.0.0 + secret (LAN-accessible)
 #   doctor         environment health check
 #   upgrade|uninstall
 set -o pipefail
@@ -44,11 +46,41 @@ load() { # load <module-name>  -> sources lib/<name>.sh
 }
 
 usage() {
-    sed -n 's/^#   /  /p' "$0" 2>/dev/null | sed '1iCommands:'
-    cat <<'EOF'
+    local w=48 n="${C_N}"
+    printf '%sproxy%s — mihomo (Clash.Meta) 管理 CLI\n\n' "${C_B}${C_Y}" "$n"
 
-Run `proxy <command> -h` for command-specific help. Project home: ~/scripts/proxy/
-EOF
+    printf '  %s📦 安装%s\n' "${C_B}" "$n"
+    printf '  %-*s %s\n' "$w" "install [--via github|brew|gz] [--bin PATH]" "检测/下载 mihomo + 引导配置 + 装钩子"
+    printf '  %-*s %s\n' "$w" "init" "仅初始化配置 + 钩子 (已有二进制)"
+    printf '  %-*s %s\n' "$w" "upgrade" "升级 mihomo"
+    printf '  %-*s %s\n' "$w" "uninstall" "移除钩子/软链 (配置保留)"
+    printf '\n'
+
+    printf '  %s🚀 运行%s\n' "${C_B}" "$n"
+    printf '  %-*s %s\n' "$w" "start | stop | restart" "启停 (nohup 直连二进制, brew 感知)"
+    printf '  %-*s %s\n' "$w" "status" "运行/版本/出口节点/流量/端口/TUN/代理环境 + 自动诊断"
+    printf '  %-*s %s\n' "$w" "log [-f]" "日志 (-f 跟随)"
+    printf '\n'
+
+    printf '  %s🌍 节点 / 订阅%s\n' "${C_B}" "$n"
+    printf '  %-*s %s\n' "$w" "node list | test | use" "节点列表 / 测延迟后直切 / 模糊切换"
+    printf '  %-*s %s\n' "$w" "region list | apply | preset | add | rm | set" "地区自动组 (HK/SG/JP/US 一键预设)"
+    printf '  %-*s %s\n' "$w" "sub add | rm | list | use | show | refresh" "多订阅管理 (refresh 自动重放 merge)"
+    printf '  %-*s %s\n' "$w" "merge list | add | rm | diff | apply" "前置规则管理 (校验通过才生效)"
+    printf '  %-*s %s\n' "$w" "tun on | off [--setup-nopasswd]" "透明 TUN (需 root)"
+    printf '\n'
+
+    printf '  %s🧰 工具%s\n' "${C_B}" "$n"
+    printf '  %-*s %s\n' "$w" "env on | off | show" "代理环境变量 (当前 shell 无感生效)"
+    printf '  %-*s %s\n' "$w" "check" "系统代理 + 外网连通性检查"
+    printf '  %-*s %s\n' "$w" "route <URL> [--json]" "路由检测: 代理 vs 直连对比延迟"
+    printf '  %-*s %s\n' "$w" "monitor [--interval 秒] [--sort down|up] [--once]" "实时流量监控 (Ctrl-C 退出)"
+    printf '  %-*s %s\n' "$w" "ui [--secret [VALUE]] | off | status" "Web 仪表盘 (局域网访问)"
+    printf '  %-*s %s\n' "$w" "doctor" "环境体检"
+    printf '\n'
+
+    printf '%s运行 %sproxy <command> -h%s 查看子命令详情 · 项目: %s~/scripts/proxy/%s\n' \
+        "${C_D}" "${C_B}" "$n" "${C_D}" "$n"
 }
 
 cmd=$1; shift || true
@@ -74,6 +106,8 @@ case $cmd in
     tun)            load tun; tun_cmd "$@" ;;
     check)          load check; proxy_check "$@" ;;
     route)          load route; route_cmd "$@" ;;
+    monitor)        load monitor; monitor_cmd "$@" ;;
+    ui)             load ui; ui_cmd "$@" ;;
 
     _login)         load env; env_login ;;     # internal: called by .bashrc hook
 

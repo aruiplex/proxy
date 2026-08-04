@@ -104,7 +104,7 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy install [--bin PATH] [--via github\|brew\|gz:FILE]` | 分级安装/接管 + 初始化 |
 | `proxy init` | 仅初始化配置 + 钩子（已有二进制） |
 | `proxy start \| stop \| restart` | 启停（nohup 直连二进制；brew 感知：先 `brew services stop`，清外来实例，精确匹配不误杀） |
-| `proxy status` | 进程/端口/控制器/出口节点/活跃连接；**控制器 ↓ 时自动诊断**（见故障排查） |
+| `proxy status` | 运行状态/版本/运行时长/出口节点/活跃连接/累计流量/端口/TUN/代理环境；**控制器 ↓ 时自动诊断**（见故障排查） |
 | `proxy log [-f]` | 日志（`-f` 跟随） |
 | `proxy env on \| off \| show` | 代理环境变量开关（当前 Shell 及新 Shell 自动无感生效，带 0ms 启动开销优化） |
 | `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点：`list` 带序号过滤信息节点；`test` 测全部节点延迟排序后可选号直切；`use` 支持序号/子串(唯一则切，多义弹菜单)/无参交互(fzf 或序号菜单) |
@@ -117,6 +117,8 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy sub set <URL>` | 旧用法：存为 default + 激活 + 拉取 |
 | `proxy tun on \| off \| --setup-nopasswd` | 透明 TUN（需 root） |
 | `proxy route <URL> [--json]` | URL 路由检测：分别通过代理和直连访问目标 URL，对比连通性与延迟；`--json` 输出机器可读结果 |
+| `proxy monitor [--interval <秒>] [--sort down\|up\|name] [--once]` | 实时流量监控：持续显示速率/累计流量/活动连接表（主机、规则、链路、上下行），Ctrl-C 退出；`--once` 单帧输出供脚本使用 |
+| `proxy ui [--secret [VALUE]] \| off \| status` | Web 仪表盘 (metacubexd)：默认无密码改绑 `0.0.0.0`，局域网任意机器访问 `http://<IP>:9090/ui/`；`--secret` 设密码（无值=随机生成）；`off` 撤回为仅本机；`status` 查看当前状态 |
 | `proxy check` | 系统代理状态 + 外网连通性 |
 | `proxy doctor` | 环境体检 |
 | `proxy upgrade` | 按 install_method 升级 mihomo |
@@ -131,6 +133,11 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 - **无感实时生效**：执行 `proxy env on` 或 `off` 时，Shell 函数会在当前 Shell 内直接更新 `http_proxy`/`https_proxy`/`all_proxy`（+ 大写变体及 `no_proxy`），无需手动复制执行 `eval`！
 - **0 毫秒启动开销**：当代理开关关闭或未初始化时，新打开的终端会直接跳过后台子进程检测，零延迟。
 - 地址取自 `proxy.conf` 的 `proxy_addr`，否则解析 `config.yaml` 的 `mixed-port`，默认 `127.0.0.1:7890`。
+
+**Tab 补全**（bash）：钩子块同时注册 `_proxy_complete`——命令树 + 子命令 + 动态候选
+（`node use/test` 的节点名走控制器、`sub` 的订阅名读 `subs.conf`、`merge rm` 的规则读 `merge.yaml`；
+节点/规则为子串匹配，兼容 emoji 旗帜前缀）。zsh 无 `complete` 内建命令，守卫自动跳过
+（启用 `bashcompinit` 后可复用）。
 
 ---
 
@@ -272,7 +279,7 @@ Selector/URLTest 类型，查 `config.yaml`。
 ```
 ~/scripts/proxy/                 # 全部代码（仅此目录）
   proxy                          # 主入口（子命令分发）
-  lib/{common,detect,install,service,env,merge,node,sub,tun,check,region,route}.sh
+  lib/{common,detect,install,service,env,merge,node,sub,tun,check,region,route,monitor,ui}.sh
   templates/{config.minimal.yaml,merge.yaml}
   README.md
 ~/.config/mihomo/                # 运行时状态(非代码)

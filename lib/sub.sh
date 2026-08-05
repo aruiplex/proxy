@@ -46,6 +46,226 @@ _sub_url_for() { # name -> url (subs first, then legacy sub_url)
     local u; u=$(_sub_get_url "$1"); [[ -n "$u" ]] || u=$(conf_get sub_url); printf '%s' "$u"
 }
 
+# Convert a base64 / URI-list subscription into a Clash YAML config (in place).
+# GUI clients (Verge/v2rayN) do this internally; the CLI's mihomo -t validation
+# requires YAML, so this is the CLI-side equivalent. No-op when the content is
+# already YAML. Exits 1 when the content is neither YAML nor a parseable node
+# list. Supports ss/trojan/vmess/vless/hysteria2 URIs; airport info pseudo-nodes
+# are skipped here (and again by _sub_sanitize for YAML subs).
+_sub_convert() { # <file> [controller]
+    has python3 || return 0
+    python3 - "$1" "${2:-$(controller_addr)}" <<'PY'
+import sys, base64, json, re, urllib.parse
+
+path, ctrl = sys.argv[1], sys.argv[2]
+raw = open(path, 'rb').read()
+t = raw.decode('utf-8', 'replace').strip()
+
+def looks_yaml(s):
+    for line in s.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if line.startswith('---'):
+            return True
+        if '://' in line:
+            return False
+        return bool(re.match(r'^[A-Za-z][A-Za-z0-9_-]*\s*:', line))
+    return False
+
+if looks_yaml(t):
+    sys.exit(0)                      # already a Clash YAML config
+
+if re.match(r'^[A-Za-z0-9]+://', t):
+    text = t                          # plain URI list
+else:
+    try:
+        dec = base64.b64decode(t).decode('utf-8', 'replace')
+    except Exception:
+        dec = ''
+    if dec and ('://' in dec[:4000] or looks_yaml(dec)):
+        text = dec
+    else:
+        text = t
+    if looks_yaml(text):
+        open(path, 'w').write(text)   # YAML wrapped in base64
+        print('已解码: 订阅是 base64 包裹的 YAML')
+        sys.exit(0)
+
+INFO = ('剩余流量', '套餐', '到期', '重置', '官网', '客服', '邮箱', '支持AI')
+def is_info(name):
+    return any(k in name for k in INFO)
+def ok_port(p):
+    try:
+        p['port'] = int(p['port'])
+    except Exception:
+        return False
+    return 1 <= p['port'] <= 65535
+
+nodes = []
+for line in text.splitlines():
+    l = line.strip()
+    if not l or '://' not in l:
+        continue
+    scheme = l.split('://', 1)[0].lower()
+    u = urllib.parse.urlsplit(l)
+    name = urllib.parse.unquote(u.fragment).strip() or l.split('#', 1)[-1].strip()
+    if not name or is_info(name):
+        continue
+    q = urllib.parse.parse_qs(u.query)
+    p = None
+    if scheme == 'hysteria2':
+        p = {'name': name, 'type': 'hysteria2', 'server': u.hostname,
+             'port': u.port, 'password': urllib.parse.unquote(u.username or '')}
+        if q.get('sni'): p['sni'] = q['sni'][0]
+        if q.get('insecure', ['0'])[0] == '1': p['skip-cert-verify'] = True
+    elif scheme == 'vless':
+        p = {'name': name, 'type': 'vless', 'server': u.hostname, 'port': u.port,
+             'uuid': urllib.parse.unquote(u.username or ''), 'tls': True}
+        if q.get('sni'): p['servername'] = q['sni'][0]
+        if q.get('fp'): p['client-fingerprint'] = q['fp'][0]
+        net = q.get('type', ['tcp'])[0]
+        p['network'] = net
+        pathv = urllib.parse.unquote(q.get('path', [''])[0])
+        host = urllib.parse.unquote(q.get('host', [''])[0])
+        if net in ('ws', 'xhttp') and (pathv or host):
+            opts = {}
+            if pathv: opts['path'] = pathv
+            if host: opts['headers'] = {'Host': host}
+            p['ws-opts' if net == 'ws' else 'xhttp-opts'] = opts
+    elif scheme == 'trojan':
+        p = {'name': name, 'type': 'trojan', 'server': u.hostname, 'port': u.port,
+             'password': urllib.parse.unquote(u.username or '')}
+        if q.get('sni'): p['sni'] = q['sni'][0]
+        if q.get('fp'): p['client-fingerprint'] = q['fp'][0]
+        if q.get('allowInsecure', ['0'])[0] == '1': p['skip-cert-verify'] = True
+    elif scheme == 'vmess':
+        try:
+            data = json.loads(base64.b64decode(u.netloc).decode())
+        except Exception:
+            try:
+                data = json.loads(urllib.parse.unquote(u.netloc))
+            except Exception:
+                continue
+        p = {'name': data.get('ps') or name, 'type': 'vmess',
+             'server': data.get('add'), 'port': data.get('port'),
+             'uuid': data.get('id'), 'alterId': int(data.get('aid') or 0),
+             'cipher': data.get('scy') or 'auto'}
+        if data.get('tls') in ('tls', True, 1): p['tls'] = True
+        if data.get('sni'): p['servername'] = data['sni']
+        if data.get('fp'): p['client-fingerprint'] = data['fp']
+        net = data.get('net') or 'tcp'
+        if net == 'ws':
+            p['network'] = 'ws'
+            opts = {}
+            if data.get('path'): opts['path'] = data['path']
+            if data.get('host'): opts['headers'] = {'Host': data['host']}
+            if opts: p['ws-opts'] = opts
+        elif net == 'grpc':
+            p['network'] = 'grpc'
+            svc = data.get('path') or data.get('serviceName') or ''
+            p['grpc-opts'] = {'grpc-service-name': svc}
+    elif scheme == 'ss':
+        body = l[5:]
+        if '#' in body: body = body.split('#', 1)[0]
+        if '@' in body:
+            userinfo, _, hostport = body.rpartition('@')
+            host, _, port = hostport.rpartition(':')
+            if ':' not in userinfo:                      # base64(method:password)
+                dec = base64.b64decode(userinfo).decode('utf-8', 'replace')
+            else:
+                dec = userinfo
+            method, _, password = dec.partition(':')
+            p = {'name': name, 'type': 'ss', 'server': host, 'port': port,
+                 'cipher': method, 'password': password}
+        else:                                            # legacy: whole thing base64
+            m = re.match(r'^([^:]+):([^@]+)@([^:]+):(\d+)$',
+                         base64.b64decode(body).decode('utf-8', 'replace'))
+            if m:
+                method, password, host, port = m.groups()
+                p = {'name': name, 'type': 'ss', 'server': host, 'port': port,
+                     'cipher': method, 'password': password}
+    if p and ok_port(p) and p.get('server'):
+        nodes.append(p)
+
+if not nodes:
+    print('无法解析: 内容既不是 Clash YAML 也没有可识别的节点', file=sys.stderr)
+    sys.exit(1)
+
+def q(s):
+    s = str(s)
+    if s == '' or any(c in s for c in ':{}[],&*#?|-<>=!%@`\'"') or s != s.strip():
+        return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return s
+
+def emit(p):
+    o = ['    - name: %s' % q(p['name']), '      type: %s' % p['type'],
+         '      server: %s' % q(p['server']), '      port: %d' % p['port']]
+    for k in ('password', 'uuid', 'cipher', 'sni', 'servername',
+              'client-fingerprint', 'alterId'):
+        if k in p:
+            o.append('      %s: %s' % (k, q(p[k])))
+    if p.get('skip-cert-verify'): o.append('      skip-cert-verify: true')
+    if p.get('tls'): o.append('      tls: true')
+    if p.get('network'):
+        o.append('      network: %s' % p['network'])
+        for optk in ('ws-opts', 'xhttp-opts', 'grpc-opts'):
+            if optk in p:
+                o.append('      %s:' % optk)
+                for kk, vv in p[optk].items():
+                    if isinstance(vv, dict):
+                        o.append('        %s:' % kk)
+                        for hk, hv in vv.items():
+                            o.append('          %s: %s' % (hk, q(hv)))
+                    else:
+                        o.append('        %s: %s' % (kk, q(vv)))
+    return '\n'.join(o)
+
+names = [p['name'] for p in nodes]
+member = '\n'.join('        - %s' % q(n) for n in names)
+config = ('mixed-port: 7890\n'
+          'mode: rule\n'
+          'log-level: info\n'
+          'external-controller: %s\n'
+          'dns:\n'
+          '    enable: true\n'
+          '    ipv6: false\n'
+          '    enhanced-mode: fake-ip\n'
+          '    fake-ip-range: 198.18.0.1/16\n'
+          '    default-nameserver: [223.5.5.5, 119.29.29.29]\n'
+          "    nameserver: ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query', 223.5.5.5, 119.29.29.29]\n"
+          "    fallback: ['https://8.8.8.8/dns-query', 'https://1.1.1.1/dns-query', 8.8.8.8, 1.1.1.1]\n"
+          'proxies:\n%s\n\n'
+          'proxy-groups:\n'
+          '    - name: 自动选择\n'
+          '      type: url-test\n'
+          '      url: http://www.gstatic.com/generate_204\n'
+          '      interval: 300\n'
+          '      tolerance: 50\n'
+          '      lazy: true\n'
+          '      proxies:\n%s\n'
+          '    - name: 故障转移\n'
+          '      type: fallback\n'
+          '      url: http://www.gstatic.com/generate_204\n'
+          '      interval: 300\n'
+          '      lazy: true\n'
+          '      proxies:\n%s\n'
+          '    - name: 节点选择\n'
+          '      type: select\n'
+          '      proxies:\n'
+          '        - 自动选择\n'
+          '        - 故障转移\n%s\n'
+          'rules:\n'
+          "    - 'GEOIP,CN,DIRECT'\n"
+          "    - 'MATCH,节点选择'\n") % (ctrl,
+                                          '\n'.join(emit(p) for p in nodes),
+                                          member, member,
+                                          '\n'.join('        - %s' % q(n) for n in names))
+open(path, 'w').write(config)
+print('已转换 %d 个节点 (base64/节点列表 → Clash YAML)' % len(nodes))
+PY
+}
+
 # Post-download sanitization for the fetched subscription (in place):
 #   1. drop airport info pseudo-nodes (客服/官网/剩余流量/套餐/到期/重置/支持AI …).
 #      These are fake proxies with non-existent servers that airports sprinkle into
@@ -192,6 +412,12 @@ sub_refresh() {
     info "拉取订阅 '$name' (UA: $ua) ..."
     if ! curl -fsSL --max-time 30 -A "$ua" "$url" -o "$CONFIG.new" 2>/dev/null; then
         die "拉取失败 (URL/UA/网络?), 配置未改动"
+    fi
+    local conv
+    if conv=$(_sub_convert "$CONFIG.new"); then
+        [[ -n "$conv" ]] && info "$conv"
+    else
+        die "订阅内容无法解析 (既不是 Clash YAML 也不是节点列表); 配置未改动"
     fi
     _sub_sanitize "$CONFIG.new"
     if ! mihomo_test "$CONFIG.new"; then

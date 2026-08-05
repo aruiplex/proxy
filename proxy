@@ -76,6 +76,7 @@ usage() {
     printf '  %-*s %s\n' "$w" "route <URL> [--json]" "路由检测: 代理 vs 直连对比延迟"
     printf '  %-*s %s\n' "$w" "monitor [--interval 秒] [--sort down|up] [--once]" "实时流量监控 (Ctrl-C 退出)"
     printf '  %-*s %s\n' "$w" "ui [--secret [VALUE]] | off | status" "Web 仪表盘 (局域网访问)"
+    printf '  %-*s %s\n' "$w" "sync export | import | push | pull" "多端同步 merge/region/订阅/设置 (对标 scripts secret)"
     printf '  %-*s %s\n' "$w" "doctor" "环境体检"
     printf '\n'
 
@@ -108,6 +109,7 @@ case $cmd in
     route)          load route; route_cmd "$@" ;;
     monitor)        load monitor; monitor_cmd "$@" ;;
     ui)             load ui; ui_cmd "$@" ;;
+    sync)           load sync; sync_cmd "$@" ;;
 
     _login)         load env; env_login ;;     # internal: called by .bashrc hook
 

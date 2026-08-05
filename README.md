@@ -119,6 +119,7 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy route <URL> [--json]` | URL 路由检测：分别通过代理和直连访问目标 URL，对比连通性与延迟；`--json` 输出机器可读结果 |
 | `proxy monitor [--interval <秒>] [--sort down\|up\|name] [--once]` | 实时流量监控：持续显示速率/累计流量/活动连接表（主机、规则、链路、上下行），Ctrl-C 退出；`--once` 单帧输出供脚本使用 |
 | `proxy ui [--secret [VALUE]] \| off \| status` | Web 仪表盘 (metacubexd)：默认无密码改绑 `0.0.0.0`，局域网任意机器访问 `http://<IP>:9090/ui/`；`--secret` 设密码（无值=随机生成）；`off` 撤回为仅本机；`status` 查看当前状态 |
+| `proxy sync export \| import \| push \| pull` | 多端配置同步（merge/region/订阅/可迁移设置，对标 `scripts secret push/pull`） |
 | `proxy check` | 系统代理状态 + 外网连通性 |
 | `proxy doctor` | 环境体检 |
 | `proxy upgrade` | 按 install_method 升级 mihomo |
@@ -146,6 +147,12 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 订阅存为 `name<TAB>url` 于 `subs.conf`（权限 600，含机场 token）。一个为"活跃"，`use`/`refresh`
 拉取→校验→替换 config→重新前置 merge→应用。
 
+**格式**：Clash YAML 直接使用；base64 / v2rayN 节点列表（ss、trojan、vmess、vless、
+hysteria2）**自动转换**为完整配置（fake-ip DNS + 自动选择/故障转移/节点选择组 + 国内直连规则），
+无需 GUI 客户端中转。拉取请求 UA 为 `mihomo/<版本>`（可在 `proxy.conf` 设 `sub_ua` 覆盖；
+个别后端只认特定 UA）。转换/刷新时自动剔除机场信息伪节点（客服/官网/剩余流量等——此类
+假节点排在组首位时会导致流量全死）并把 `external-controller` 归一化为本工具配置的地址。
+
 ```bash
 proxy sub add airportA <URL>     # 添加
 proxy sub add airportB <URL>     # 多个订阅
@@ -157,6 +164,26 @@ proxy sub rm airportB           # 删除
 ```
 
 旧用法 `proxy sub set <URL>` 等同于存为 `default` + 激活 + 拉取。
+
+---
+
+## 多端同步（sync）
+
+把**用户资产**同步到其他机器（对标 `scripts secret push/pull`）：
+
+```bash
+proxy sync export sync.tgz          # 打包: merge.yaml + regions.conf + subs.conf + proxy.conf 可迁移键
+proxy sync import sync.tgz          # 应用 (文件/目录/stdin 均可)
+proxy sync push user@other_machine  # 经 ssh 推送并自动合并 (远端无需装 proxy CLI)
+proxy sync pull user@other_machine  # 从远端拉取并应用
+```
+
+**同步**：merge 规则、region 组、订阅列表（含 token）、`active_sub`/`sub_ua`/`region_*`/`test_*`。
+**不同步**（每台机器独立）：`config.yaml`（订阅刷新生成）、`bin`/`install_method`（路径不同）、
+`controller`/`secret`（绑定本机配置状态）、**节点选择**（只存在运行中内存，重启即重置，
+且各机器位置不同应自选出口）、`env.state`/日志/UI 目录。导入后自动重新应用 merge/region；
+订阅不自动刷新（新机器可能还没网），提示手动 `proxy sub refresh`。token 安全策略与
+`secrets.sh` 一致（mode 600，传输走 ssh）。
 
 ---
 

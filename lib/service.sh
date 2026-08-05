@@ -153,7 +153,9 @@ print(len(d.get('connections') or []), d.get('uploadTotal',0), d.get('downloadTo
     fi
 
     mport=$(awk -F': *' '/^mixed-port:/{print $2;exit}' "$CONFIG" 2>/dev/null)
-    say "  代理端口:  ${mport:-<未设置>} (mixed-port)"
+    local mtype=mixed-port
+    [[ -z "$mport" ]] && { mport=$(awk -F': *' '/^port:/{print $2;exit}' "$CONFIG" 2>/dev/null); mtype=port; }
+    say "  代理端口:  ${mport:-<未设置>} ($mtype)"
 
     envstate=$(cat "$ENV_STATE" 2>/dev/null)
     if [[ "$envstate" == "on" ]]; then

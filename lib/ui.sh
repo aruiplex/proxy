@@ -18,7 +18,8 @@ UI_DIR="$CONF_DIR/ui"
 ui_cmd() {
     local sub=${1:-}
     case "$sub" in
-        on|""|--secret|-s) ui_on "$@" ;;    # pass flags through verbatim
+        on)     shift || true; ui_on "$@" ;;
+        ""|--secret|-s) ui_on "$@" ;;       # pass flags through verbatim
         off)     shift || true; ui_off "$@" ;;
         status)  ui_status ;;
         -h|--help)

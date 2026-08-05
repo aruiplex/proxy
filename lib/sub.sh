@@ -46,6 +46,44 @@ _sub_url_for() { # name -> url (subs first, then legacy sub_url)
     local u; u=$(_sub_get_url "$1"); [[ -n "$u" ]] || u=$(conf_get sub_url); printf '%s' "$u"
 }
 
+# Post-download sanitization for the fetched subscription (in place):
+#   1. drop airport info pseudo-nodes (客服/官网/剩余流量/套餐/到期/重置/支持AI …).
+#      These are fake proxies with non-existent servers that airports sprinkle into
+#      groups — if a group auto-selects one (URLTest's initial pick = first member),
+#      ALL traffic dies. Removed from definitions AND every group member list.
+#   2. normalize external-controller to the CLI's configured address, so the tool
+#      always finds the API no matter what port the airport ships.
+_sub_sanitize() { # <file> [controller]
+    has python3 || return 0
+    python3 - "$1" "${2:-$(controller_addr)}" <<'PY'
+import sys, re
+path, ctrl = sys.argv[1], sys.argv[2]
+t = open(path).read()
+
+pat = re.compile(r'剩余流量|套餐|到期|重置|官网|客服|邮箱|支持AI')
+def name_of(s):
+    s = s.strip().strip('"\'')
+    return s
+# info-node names: those proxy definitions whose name matches the pattern
+defs = re.findall(r'(?m)^[ \t]+-\s*\{\s*name:\s*([^,}]+?),[^\n]*?(?:type:\s*\w+)', t)
+drop = [name_of(d) for d in defs if pat.search(d)]
+
+if drop:
+    for n in drop:
+        # drop the proxy definition line (name may be quoted in the definition)
+        t = re.sub(r'(?m)^[ \t]+-\s*\{\s*name:\s*["\']?%s["\']?\s*,.*\}\s*\n' % re.escape(n), '', t)
+    # rebuild every group's member list without the dropped names
+    def clean_list(m):
+        toks = [x.strip() for x in m.group(2).strip().split(',') if x.strip()]
+        keep = [x for x in toks if name_of(x) not in drop]
+        return m.group(1) + '[' + ', '.join(keep) + ']'
+    t = re.sub(r'(proxies:\s*)\[(.*?)\]', clean_list, t, flags=re.S)
+
+t = re.sub(r'(?m)^external-controller:\s*.*$', 'external-controller: %s' % ctrl, t)
+open(path, 'w').write(t)
+PY
+}
+
 # mask the token segment of a subscription URL for safe display
 _sub_mask() {
     has python3 || { printf '%s' "$1"; return; }
@@ -149,12 +187,13 @@ sub_refresh() {
     local bin ua
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制"
     ua=$(conf_get sub_ua)
-    [[ -n "$ua" ]] || ua="clash-meta/$("$bin" -v 2>/dev/null | awk '{print $3;exit}')"
+    [[ -n "$ua" ]] || ua="mihomo/$("$bin" -v 2>/dev/null | awk '{print $3;exit}')"
 
     info "拉取订阅 '$name' (UA: $ua) ..."
     if ! curl -fsSL --max-time 30 -A "$ua" "$url" -o "$CONFIG.new" 2>/dev/null; then
         die "拉取失败 (URL/UA/网络?), 配置未改动"
     fi
+    _sub_sanitize "$CONFIG.new"
     if ! mihomo_test "$CONFIG.new"; then
         warn "新订阅校验失败, 未替换; 末尾:"
         "$bin" -t -d "$CONF_DIR" -f "$CONFIG.new" 2>&1 | tail -3 >&2

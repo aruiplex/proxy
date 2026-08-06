@@ -273,11 +273,11 @@ PY
 #      ALL traffic dies. Removed from definitions AND every group member list.
 #   2. normalize external-controller to the CLI's configured address, so the tool
 #      always finds the API no matter what port the airport ships.
-_sub_sanitize() { # <file> [controller]
+_sub_sanitize() { # <file> [controller] [lan]
     has python3 || return 0
-    python3 - "$1" "${2:-$(controller_addr)}" <<'PY'
+    python3 - "$1" "${2:-$(controller_addr)}" "${3:-$(conf_get lan)}" <<'PY'
 import sys, re
-path, ctrl = sys.argv[1], sys.argv[2]
+path, ctrl, lan = sys.argv[1], sys.argv[2], sys.argv[3]
 t = open(path).read()
 
 pat = re.compile(r'剩余流量|套餐|到期|重置|官网|客服|邮箱|支持AI')
@@ -300,6 +300,20 @@ if drop:
     t = re.sub(r'(proxies:\s*)\[(.*?)\]', clean_list, t, flags=re.S)
 
 t = re.sub(r'(?m)^external-controller:\s*.*$', 'external-controller: %s' % ctrl, t)
+
+# persist the `proxy lan` choice across subscription refreshes
+def set_kv(name, val):
+    global t
+    if re.search(r'(?m)^%s:' % name, t):
+        t = re.sub(r'(?m)^%s:.*$' % name, '%s: %s' % (name, val), t)
+    else:
+        t = t.rstrip('\n') + '\n%s: %s\n' % (name, val)
+if lan == 'on':
+    set_kv('allow-lan', 'true')
+    set_kv('bind-address', "'*'")
+elif lan == 'off':
+    set_kv('allow-lan', 'false')
+
 open(path, 'w').write(t)
 PY
 }

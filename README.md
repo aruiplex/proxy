@@ -119,6 +119,7 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy route <URL> [--json]` | URL 路由检测：分别通过代理和直连访问目标 URL，对比连通性与延迟；`--json` 输出机器可读结果 |
 | `proxy monitor [--interval <秒>] [--sort down\|up\|name] [--once]` | 实时流量监控：持续显示速率/累计流量/活动连接表（主机、规则、链路、上下行），Ctrl-C 退出；`--once` 单帧输出供脚本使用 |
 | `proxy ui [--secret [VALUE]] \| off \| status` | Web 仪表盘 (metacubexd)：默认无密码改绑 `0.0.0.0`，局域网任意机器访问 `http://<IP>:9090/ui/`；`--secret` 设密码（无值=随机生成）；`off` 撤回为仅本机；`status` 查看当前状态 |
+| `proxy lan on \| off \| status` | allow-lan 开关：局域网设备用本机作代理（持久化，订阅刷新后保留） |
 | `proxy sync export \| import \| push \| pull` | 多端配置同步（merge/region/订阅/可迁移设置，对标 `scripts secret push/pull`） |
 | `proxy check` | 系统代理状态 + 外网连通性 |
 | `proxy doctor` | 环境体检 |
@@ -178,7 +179,8 @@ proxy sync push user@other_machine  # 经 ssh 推送并自动合并 (远端无�
 proxy sync pull user@other_machine  # 从远端拉取并应用
 ```
 
-**同步**：merge 规则、region 组、订阅列表（含 token）、`active_sub`/`sub_ua`/`region_*`/`test_*`。
+**同步**：merge 规则、region 组、订阅列表（含 token）、`active_sub`/`sub_ua`/`region_*`/`test_*`/`lan`
+（allow-lan 开关）。
 **不同步**（每台机器独立）：`config.yaml`（订阅刷新生成）、`bin`/`install_method`（路径不同）、
 `controller`/`secret`（绑定本机配置状态）、**节点选择**（只存在运行中内存，重启即重置，
 且各机器位置不同应自选出口）、`env.state`/日志/UI 目录。导入后自动重新应用 merge/region；

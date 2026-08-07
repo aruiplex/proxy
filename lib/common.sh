@@ -121,8 +121,16 @@ node_group() {
     ctrl_get /proxies 2>/dev/null | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
-for n,v in d.get('proxies',{}).items():
-    if v.get('type') in ('Selector','URLTest') and n not in ('GLOBAL','DIRECT','REJECT') and v.get('all'):
-        print(n);break
+proxies=d.get('proxies',{})
+# prefer a Selector (the pool entry group 节点选择); fall back to URLTest for
+# subs without one. First-by-name is unreliable: Go sorts group names by
+# UTF-8 bytes, so 加拿大-自动 sorts before 节点选择.
+for want in ('Selector','URLTest'):
+    for n,v in proxies.items():
+        if v.get('type')==want and n not in ('GLOBAL','DIRECT','REJECT') and v.get('all'):
+            print(n);break
+    else:
+        continue
+    break
 " 2>/dev/null
 }

@@ -120,6 +120,7 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy monitor [--interval <秒>] [--sort down\|up\|name] [--once]` | 实时流量监控：持续显示速率/累计流量/活动连接表（主机、规则、链路、上下行），Ctrl-C 退出；`--once` 单帧输出供脚本使用 |
 | `proxy ui [--secret [VALUE]] \| off \| status` | Web 仪表盘 (metacubexd)：默认无密码改绑 `0.0.0.0`，局域网任意机器访问 `http://<IP>:9090/ui/`；`--secret` 设密码（无值=随机生成）；`off` 撤回为仅本机；`status` 查看当前状态 |
 | `proxy lan on \| off \| status` | allow-lan 开关：局域网设备用本机作代理（持久化，订阅刷新后保留） |
+| `proxy pool on \| off \| status \| refresh` | 节点池模式：全机场节点语义归一化合并 + mihomo fallback 无感自动切换 |
 | `proxy sync export \| import \| push \| pull` | 多端配置同步（merge/region/订阅/可迁移设置，对标 `scripts secret push/pull`） |
 | `proxy check` | 系统代理状态 + 外网连通性 |
 | `proxy doctor` | 环境体检 |
@@ -186,6 +187,46 @@ proxy sync pull user@other_machine  # 从远端拉取并应用
 且各机器位置不同应自选出口）、`env.state`/日志/UI 目录。导入后自动重新应用 merge/region；
 订阅不自动刷新（新机器可能还没网），提示手动 `proxy sub refresh`。token 安全策略与
 `secrets.sh` 一致（mode 600，传输走 ssh）。
+
+---
+
+## 节点池模式（pool）
+
+把**所有机场的节点合并进一个池**，节点名经过**语义归一化**（旗帜/`[一倍电信]`/`|1倍|V1` 等噪音剥离，
+国家别名映射 + 顺序编号），用户完全不关心流量来自哪个机场：
+
+```
+🇸🇬Singapore 01 / 新加坡01 / [一倍电信]HK 01 / 🇺🇸 美国G1|实验|1倍|V1
+→ 新加坡01 / 新加坡02 / 香港01 / 美国01 ...
+```
+
+生成的池配置（`proxy pool refresh` 拉取全部订阅 → base64 自动转换 → 净化 → 合并 → 校验 → 热重载，
+部分机场失败时保留其上一轮节点并告警）：
+
+```
+节点选择 (select):  [🚀 自动, 新加坡-自动, 香港-自动, ..., 其他-自动]   ← 入口
+🚀 自动 (fallback): [新加坡-自动, 香港-自动, ..., 其他-自动]            ← 跨地区无感故障转移
+新加坡-自动 (url-test): 新加坡01~NN（include-all + filter）
+其他-自动 (url-test): 无法识别的节点（兜底）
+rules: GEOIP,CN,DIRECT / MATCH,节点选择
+```
+
+**无感切换**：入口默认指向 `🚀 自动`（fallback 链）——某地区组全节点 timeout（机场耗尽/停用是
+账号级故障，特征就是全组同时失败）→ mihomo 自动让位下一个健康组，无守护进程、无感知。
+机场级故障被地区组吸收：一家机场挂了，新加坡组里其他机场的节点仍活。
+
+```bash
+proxy pool on        # 开启并构建节点池（聚合全部订阅）
+proxy pool refresh   # 重新拉取全部订阅重建池
+proxy pool status    # 池状态: 订阅节点数 / 地区组实时状态 / 当前出口
+proxy pool off       # 退回单订阅模式 (proxy sub use 管理)
+```
+
+- region 定义（`regions.conf` 正则）作用在**归一化后的名字**上，两种模式无需改动
+- pool 模式下 `proxy region add/rm/set/preset` 自动触发池重建；`proxy sub use/refresh` 给出提示
+- `node test` 20 节点一批并行测速；`node use 新加坡` 直接子串匹配规范化名
+- 自定义 region 正则若依赖被剥离的标签（`优化`/`家宽`/倍率）将无法命中——池模式下的名字只有地区语义
+- 可选自动化：cron 定时 `proxy pool refresh`（如每天一次）
 
 ---
 

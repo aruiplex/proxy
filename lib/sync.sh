@@ -20,7 +20,7 @@
 #   proxy sync push <user@host>   transfer + merge on the remote (bash/awk only)
 #   proxy sync pull <user@host>   fetch the remote's bundle and import locally
 
-SYNC_CONF_KEYS="active_sub sub_ua sub_url region_interval region_url region_exclude test_timeout test_url lan"
+SYNC_CONF_KEYS="active_sub sub_ua sub_url region_interval region_url region_exclude test_timeout test_url lan pool"
 
 # filter proxy.conf: print only the portable keys (space-separated list in $1)
 _sync_portable() { # <file> <keys>
@@ -162,7 +162,7 @@ sync_push() { # <user@host>
             fi
         done
         if [ -s .sync-incoming/proxy.portable ]; then
-            keys="active_sub sub_ua sub_url region_interval region_url region_exclude test_timeout test_url lan"
+            keys="active_sub sub_ua sub_url region_interval region_url region_exclude test_timeout test_url lan pool"
             { grep -vE "^(${keys// /|})=" proxy.conf 2>/dev/null || true; cat .sync-incoming/proxy.portable; } > proxy.conf.new
             mv -f proxy.conf.new proxy.conf
             chmod 600 proxy.conf

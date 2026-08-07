@@ -48,19 +48,39 @@ node_test() {
     timeout=$(conf_get test_timeout); timeout=${timeout:-5000}
     info "测延迟 (group=$g, url=$url, timeout=${timeout}ms) ..."
 
-    # collect node names and delays in parallel arrays
-    local nodes=() results=()
-    while IFS= read -r n; do
-        nodes+=("$n")
-        local out ms
-        out=$(ctrl_get "/proxies/$(jq_uri "$n")/delay?url=${url}&timeout=${timeout}" 2>/dev/null)
-        ms=$(printf '%s' "$out" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('delay',''))" 2>/dev/null)
-        if [[ -n "$ms" ]]; then
-            results+=("$(printf '%06d %s' "$ms" "$n")")
-        else
-            results+=("$(printf '999999 %s' "$n")")
-        fi
-    done < <(_node_members "$g")
+    # collect node names, then test in batches of 20 concurrent requests
+    # (each delay test is a controller call; mihomo runs them in parallel, so a
+    # batch takes ~one timeout instead of 20×timeout)
+    local nodes=() results=() n
+    while IFS= read -r n; do nodes+=("$n"); done < <(_node_members "$g")
+
+    local BATCH=20 idx=0
+    while (( idx < ${#nodes[@]} )); do
+        local tmp; tmp=$(mktemp -d)
+        local pids=() j=0 nn
+        for nn in "${nodes[@]:idx:BATCH}"; do
+            ( local ms
+              ms=$(ctrl_get "/proxies/$(jq_uri "$nn")/delay?url=${url}&timeout=${timeout}" 2>/dev/null \
+                   | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('delay',''))" 2>/dev/null)
+              printf '%s\t%s\n' "${ms:-FAIL}" "$nn" > "$tmp/$j"
+            ) &
+            pids+=($!); j=$((j+1))
+        done
+        local pid
+        for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null; done
+        local f
+        for f in "$tmp"/*; do
+            [[ -f "$f" ]] || continue
+            IFS=$'\t' read -r ms nn < "$f"
+            if [[ "$ms" != "FAIL" && -n "$ms" ]]; then
+                results+=("$(printf '%06d %s' "$ms" "$nn")")
+            else
+                results+=("$(printf '999999 %s' "$nn")")
+            fi
+        done
+        rm -rf "$tmp"
+        idx=$((idx + BATCH))
+    done
 
     (( ${#results[@]} > 0 )) || { warn "无可用节点"; return 1; }
 

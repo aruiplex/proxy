@@ -103,7 +103,23 @@ _region_block() {
     printf '%s%s\n' "$G" "$REGION_MARK_END"
 }
 
+# apply a region-definition change: in pool mode the pool rebuild owns the
+# groups (a region_apply injection would duplicate them), so delegate there.
+_region_dispatch() {
+    if [[ "$(conf_get pool)" == "on" ]]; then
+        # shellcheck source=pool.sh
+        source "$SCRIPT_DIR/lib/pool.sh"
+        pool_refresh
+    else
+        region_apply
+    fi
+}
+
 region_apply() {
+    if [[ "$(conf_get pool)" == "on" ]]; then
+        warn "节点池模式: region 组由池构建管理; 用 proxy pool refresh 应用"
+        return 1
+    fi
     [[ -f "$CONFIG" ]] || die "无 $CONFIG (先: proxy init)"
     json_guard   # surgery is python3-based: unicode/regex-safe, unlike awk
     _region_ensure
@@ -289,7 +305,7 @@ region_add() {
     printf '%s\t%s\n' "$name" "$regex" >> "$REGIONS_FILE.tmp"
     mv -f "$REGIONS_FILE.tmp" "$REGIONS_FILE"
     ok "地区 '$name' 已保存 → $(_region_group "$name")"
-    region_apply
+    _region_dispatch
 }
 
 region_rm() {
@@ -300,7 +316,7 @@ region_rm() {
     awk -F'\t' -v n="$name" '$1!=n' "$REGIONS_FILE" > "$REGIONS_FILE.tmp"
     mv -f "$REGIONS_FILE.tmp" "$REGIONS_FILE"
     ok "地区 '$name' 已移除"
-    region_apply
+    _region_dispatch
 }
 
 region_set() {
@@ -327,20 +343,23 @@ region_set() {
     esac
     conf_set "region_$k" "$v"
     ok "region_$k = ${v:-(空, 不屏蔽)}"
-    region_apply
+    _region_dispatch
 }
 
 region_preset() {
     _region_ensure
     say "${C_B}一键加载常用地区 (HK, SG, JP, US) 与默认排除规则...${C_N}"
     awk -F'\t' 'NF && $1 !~ /^#/ {print $1}' "$REGIONS_FILE" > "$REGIONS_FILE.bak" 2>/dev/null || true
-    region_add HK >/dev/null 2>&1 || true
-    region_add SG >/dev/null 2>&1 || true
-    region_add JP >/dev/null 2>&1 || true
-    region_add US >/dev/null 2>&1 || true
+    local name
+    for name in HK SG JP US; do
+        local regex; regex=$(_region_preset_regex "$name") || continue
+        awk -F'\t' -v n="$name" '$1!=n' "$REGIONS_FILE" > "$REGIONS_FILE.tmp"
+        printf '%s\t%s\n' "$name" "$regex" >> "$REGIONS_FILE.tmp"
+        mv -f "$REGIONS_FILE.tmp" "$REGIONS_FILE"
+    done
     conf_set "region_exclude" '(?i)(hong[ -]?kong|🇭🇰|\bhk\b|剩余|重置|套餐|到期|流量|官网|中转|倍率)'
     ok "一键预设应用完成 (包含 HK, SG, JP, US 分组与默认排除规则)"
-    region_apply
+    _region_dispatch
 }
 
 region_cmd() {

@@ -278,27 +278,62 @@ _sub_sanitize() { # <file> [controller] [lan]
     python3 - "$1" "${2:-$(controller_addr)}" "${3:-$(conf_get lan)}" <<'PY'
 import sys, re
 path, ctrl, lan = sys.argv[1], sys.argv[2], sys.argv[3]
-t = open(path).read()
+lines = open(path, encoding='utf-8').read().splitlines(keepends=True)
 
 pat = re.compile(r'剩余流量|套餐|到期|重置|官网|客服|邮箱|支持AI')
-def name_of(s):
-    s = s.strip().strip('"\'')
-    return s
-# info-node names: those proxy definitions whose name matches the pattern
-defs = re.findall(r'(?m)^[ \t]+-\s*\{\s*name:\s*([^,}]+?),[^\n]*?(?:type:\s*\w+)', t)
-drop = [name_of(d) for d in defs if pat.search(d)]
 
-if drop:
-    for n in drop:
-        # drop the proxy definition line (name may be quoted in the definition)
-        t = re.sub(r'(?m)^[ \t]+-\s*\{\s*name:\s*["\']?%s["\']?\s*,.*\}\s*\n' % re.escape(n), '', t)
-    # rebuild every group's member list without the dropped names
-    def clean_list(m):
-        toks = [x.strip() for x in m.group(2).strip().split(',') if x.strip()]
-        keep = [x for x in toks if name_of(x) not in drop]
-        return m.group(1) + '[' + ', '.join(keep) + ']'
-    t = re.sub(r'(proxies:\s*)\[(.*?)\]', clean_list, t, flags=re.S)
+# 1. collect info-node names from proxy definitions, both flow
+#    (`- { name: X, ...`) and block (`- name: X` + props) styles
+defs = []
+for ln in lines:
+    mf = re.match(r'^[ \t]+-\s*\{\s*name:\s*([^,}]+?),', ln)
+    mb = re.match(r'^[ \t]+-\s*name:\s*([^,\n]+?)\s*$', ln)
+    nm = None
+    if mf:
+        nm = mf.group(1).strip().strip('"\'')
+    elif mb:
+        nm = mb.group(1).strip().strip('"\'')
+    if nm and pat.search(nm) and nm not in defs:
+        defs.append(nm)
 
+# 2. line-based removal: definitions (whole entry), flow-list members,
+#    and block-style member lines
+out, skip_until = [], -1
+for i, ln in enumerate(lines):
+    if i < skip_until:
+        continue
+    # block-style definition entry -> skip name line + following props
+    mb = re.match(r'^([ \t]+)-\s*name:\s*(["\']?)(.*?)\2\s*$', ln)
+    if mb and mb.group(3).strip() in defs:
+        indent = len(mb.group(1))
+        j = i + 1
+        while j < len(lines):
+            l2 = lines[j]
+            if not l2.strip():
+                j += 1; continue
+            if len(l2) - len(l2.lstrip(' ')) <= indent:
+                break
+            j += 1
+        skip_until = j
+        continue
+    # flow-style definition line
+    mf = re.match(r'^[ \t]+-\s*\{\s*name:\s*["\']?(.*?)["\']?\s*,', ln)
+    if mf and mf.group(1).strip() in defs:
+        continue
+    # flow-style member list: proxies: [a, b, c]
+    ml = re.match(r'^([ \t]*proxies:[ \t]*)\[(.*)\]([ \t]*\n?)$', ln)
+    if ml:
+        toks = [x.strip() for x in ml.group(2).split(',') if x.strip()]
+        keep = [x for x in toks if x.strip().strip('"\'') not in defs]
+        out.append(ml.group(1) + '[' + ', '.join(keep) + ']' + ml.group(3))
+        continue
+    # block-style member line: `- <dropped name>`
+    mm = re.match(r'^([ \t]+)-[ \t]+(.+?)[ \t]*$', ln)
+    if mm and 'name:' not in ln and mm.group(2).strip().strip('"\'') in defs:
+        continue
+    out.append(ln)
+
+t = ''.join(out)
 t = re.sub(r'(?m)^external-controller:\s*.*$', 'external-controller: %s' % ctrl, t)
 
 # persist the `proxy lan` choice across subscription refreshes
@@ -388,6 +423,10 @@ sub_show() {
 
 sub_use() {
     local name=$1 norefresh=0
+    if [[ "$(conf_get pool)" == "on" ]]; then
+        warn "节点池模式已开启: 用 proxy pool refresh 刷新所有订阅 / proxy pool off 退回单订阅"
+        return 1
+    fi
     [[ -n "$name" ]] || die "用法: proxy sub use <name> [--no-refresh]"
     [[ "$1" == "--no-refresh" ]] && { norefresh=1; }
     # allow: proxy sub use <name> --no-refresh
@@ -414,6 +453,10 @@ sub_set() {   # legacy one-shot
 
 sub_refresh() {
     local name=${1:-$(_sub_active_name)}
+    if [[ "$(conf_get pool)" == "on" ]]; then
+        warn "节点池模式已开启: 用 proxy pool refresh 刷新所有订阅 / proxy pool off 退回单订阅"
+        return 1
+    fi
     local url; url=$(_sub_url_for "$name")
     [[ -n "$url" ]] || die "订阅 '$name' 未配置 URL (先: proxy sub add <name> <url>)"
     [[ -f "$CONFIG" ]] || die "无 $CONFIG (先: proxy init)"

@@ -77,6 +77,7 @@ usage() {
     printf '  %-*s %s\n' "$w" "monitor [--interval 秒] [--sort down|up] [--once]" "实时流量监控 (Ctrl-C 退出)"
     printf '  %-*s %s\n' "$w" "ui [--secret [VALUE]] | off | status" "Web 仪表盘 (局域网访问)"
     printf '  %-*s %s\n' "$w" "lan on | off | status" "allow-lan 开关 (局域网设备代理, 订阅刷新后保留)"
+    printf '  %-*s %s\n' "$w" "pool on | off | status | refresh" "节点池模式: 全机场节点归一化合并 + 无感自动切换"
     printf '  %-*s %s\n' "$w" "sync export | import | push | pull" "多端同步 merge/region/订阅/设置 (对标 scripts secret)"
     printf '  %-*s %s\n' "$w" "doctor" "环境体检"
     printf '\n'
@@ -111,6 +112,7 @@ case $cmd in
     monitor)        load monitor; monitor_cmd "$@" ;;
     ui)             load ui; ui_cmd "$@" ;;
     lan)            load lan; lan_cmd "$@" ;;
+    pool)           load pool; pool_cmd "$@" ;;
     sync)           load sync; sync_cmd "$@" ;;
 
     _login)         load env; env_login ;;     # internal: called by .bashrc hook

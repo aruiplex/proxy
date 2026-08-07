@@ -14,7 +14,7 @@ _proxy_complete() {
     sub1="${COMP_WORDS[1]}"
     sub2="${COMP_WORDS[2]}"
 
-    local cmds="install init doctor upgrade uninstall start stop restart status log env node merge sub tun check route monitor ui lan sync"
+    local cmds="install init doctor upgrade uninstall start stop restart status log env node merge sub tun check route monitor ui lan pool sync"
 
     case "$COMP_CWORD" in
         1)
@@ -29,6 +29,7 @@ _proxy_complete() {
                 tun)     COMPREPLY=( $(compgen -W "on off --setup-nopasswd" -- "$cur") ) ;;
                 ui)      COMPREPLY=( $(compgen -W "on off status --secret" -- "$cur") ) ;;
                 lan)     COMPREPLY=( $(compgen -W "on off status" -- "$cur") ) ;;
+                pool)    COMPREPLY=( $(compgen -W "on off status refresh" -- "$cur") ) ;;
                 monitor) COMPREPLY=( $(compgen -W "--interval --sort --once" -- "$cur") ) ;;
                 sync)    COMPREPLY=( $(compgen -W "export import push pull" -- "$cur") ) ;;
             esac

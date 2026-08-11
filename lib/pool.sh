@@ -447,7 +447,7 @@ else:
     rendered = (port_keys + 'mode: rule\nlog-level: info\n'
                 'external-controller: %s\n' % ctrl)
     rendered += proxies_section + groups_section
-    rendered += "rules:\n    - 'GEOIP,CN,DIRECT'\n    - 'MATCH,节点选择'\n"
+    rendered += "rules:\n    - 'MATCH,节点选择'\n"
 open(outpath, 'w').write(rendered)
 print('merged %d nodes from %d entries' % (len(numbered), len(entries)))
 PY

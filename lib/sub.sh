@@ -268,8 +268,7 @@ config = ('mixed-port: 7890\n'
           '    enhanced-mode: fake-ip\n'
           '    fake-ip-range: 198.18.0.1/16\n'
           '    default-nameserver: [223.5.5.5, 119.29.29.29]\n'
-          "    nameserver: ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query', 223.5.5.5, 119.29.29.29]\n"
-          "    fallback: ['https://8.8.8.8/dns-query', 'https://1.1.1.1/dns-query', 8.8.8.8, 1.1.1.1]\n"
+          "    nameserver: ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query', 'https://1.1.1.1/dns-query', 223.5.5.5, 119.29.29.29]\n"
           'proxies:\n%s\n\n'
           'proxy-groups:\n'
           '    - name: 自动选择\n'
@@ -291,7 +290,6 @@ config = ('mixed-port: 7890\n'
           '        - 自动选择\n'
           '        - 故障转移\n%s\n'
           'rules:\n'
-          "    - 'GEOIP,CN,DIRECT'\n"
           "    - 'MATCH,节点选择'\n") % (ctrl,
                                           '\n'.join(emit(p) for p in nodes),
                                           member, member,
@@ -317,29 +315,51 @@ lines = open(path, encoding='utf-8').read().splitlines(keepends=True)
 
 pat = re.compile(r'剩余流量|套餐|到期|重置|官网|客服|邮箱|支持AI')
 
-# 1. collect info-node names from proxy definitions, both flow
+# Normalize a YAML scalar enough for matching pseudo-node names. Direct pattern
+# matching is also used below, so a stale reference is removed even when its
+# definition used a different quoting style.
+def node_name(raw):
+    raw = raw.strip()
+    if raw[:1] in ("'", '"') and raw[-1:] == raw[:1]:
+        raw = raw[1:-1]
+    return raw.strip()
+
+# 1. collect info-node names from the top-level proxies section only, both flow
 #    (`- { name: X, ...`) and block (`- name: X` + props) styles
 defs = []
+section = None
 for ln in lines:
+    top = re.match(r'^([A-Za-z][A-Za-z0-9_-]*):', ln)
+    if top:
+        section = top.group(1)
+        continue
+    if section != 'proxies':
+        continue
     mf = re.match(r'^[ \t]+-\s*\{\s*name:\s*([^,}]+?),', ln)
     mb = re.match(r'^[ \t]+-\s*name:\s*([^,\n]+?)\s*$', ln)
     nm = None
     if mf:
-        nm = mf.group(1).strip().strip('"\'')
+        nm = node_name(mf.group(1))
     elif mb:
-        nm = mb.group(1).strip().strip('"\'')
+        nm = node_name(mb.group(1))
     if nm and pat.search(nm) and nm not in defs:
         defs.append(nm)
 
 # 2. line-based removal: definitions (whole entry), flow-list members,
 #    and block-style member lines
 out, skip_until = [], -1
+section = None
 for i, ln in enumerate(lines):
     if i < skip_until:
         continue
+    top = re.match(r'^([A-Za-z][A-Za-z0-9_-]*):', ln)
+    if top:
+        section = top.group(1)
+        out.append(ln)
+        continue
     # block-style definition entry -> skip name line + following props
     mb = re.match(r'^([ \t]+)-\s*name:\s*(["\']?)(.*?)\2\s*$', ln)
-    if mb and mb.group(3).strip() in defs:
+    if section == 'proxies' and mb and (node_name(mb.group(3)) in defs or pat.search(node_name(mb.group(3)))):
         indent = len(mb.group(1))
         j = i + 1
         while j < len(lines):
@@ -353,18 +373,19 @@ for i, ln in enumerate(lines):
         continue
     # flow-style definition line
     mf = re.match(r'^[ \t]+-\s*\{\s*name:\s*["\']?(.*?)["\']?\s*,', ln)
-    if mf and mf.group(1).strip() in defs:
+    if section == 'proxies' and mf and (node_name(mf.group(1)) in defs or pat.search(node_name(mf.group(1)))):
         continue
     # flow-style member list: proxies: [a, b, c]
     ml = re.match(r'^([ \t]*proxies:[ \t]*)\[(.*)\]([ \t]*\n?)$', ln)
-    if ml:
+    if section == 'proxy-groups' and ml:
         toks = [x.strip() for x in ml.group(2).split(',') if x.strip()]
-        keep = [x for x in toks if x.strip().strip('"\'') not in defs]
+        keep = [x for x in toks if node_name(x) not in defs and not pat.search(node_name(x))]
         out.append(ml.group(1) + '[' + ', '.join(keep) + ']' + ml.group(3))
         continue
     # block-style member line: `- <dropped name>`
     mm = re.match(r'^([ \t]+)-[ \t]+(.+?)[ \t]*$', ln)
-    if mm and 'name:' not in ln and mm.group(2).strip().strip('"\'') in defs:
+    if section == 'proxy-groups' and mm and 'name:' not in ln \
+       and (node_name(mm.group(2)) in defs or pat.search(node_name(mm.group(2)))):
         continue
     out.append(ln)
 

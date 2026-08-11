@@ -208,7 +208,7 @@ proxy sync pull user@other_machine  # 从远端拉取并应用
 🚀 自动 (fallback): [新加坡-自动, 香港-自动, ..., 其他-自动]            ← 跨地区无感故障转移
 新加坡-自动 (url-test): 新加坡01~NN（include-all + filter）
 其他-自动 (url-test): 无法识别的节点（兜底）
-rules: GEOIP,CN,DIRECT / MATCH,节点选择
+rules: MATCH,节点选择（转换配置默认不依赖联网下载 MMDB）
 ```
 
 **无感切换**：入口默认指向 `🚀 自动`（fallback 链）——某地区组全节点 timeout（机场耗尽/停用是

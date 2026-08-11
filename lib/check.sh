@@ -42,8 +42,9 @@ proxy_check() {
     printf "Routing Test:    "
     # -L follows redirects, -I gets headers, --connect-timeout prevents hanging
     if curl -IsL --connect-timeout 3 "$test_url" > /dev/null 2>&1; then
-        ip=$(curl -s --connect-timeout 2 ifconfig.me)
-        ok "✅ Success (IP: $ip)"
+        ip=$(curl -fsS --connect-timeout 2 --max-time 5 https://ifconfig.me/ip 2>/dev/null)
+        if [[ "$ip" =~ ^[0-9A-Fa-f:.]+$ ]]; then ok "✅ Success (IP: $ip)"
+        else ok "✅ Success"; fi
     else
         warn "❌ Failed (Connection Timeout/Refused)"
     fi

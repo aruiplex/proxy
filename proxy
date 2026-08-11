@@ -23,6 +23,7 @@
 #   doctor         environment health check
 #   upgrade|uninstall
 set -o pipefail
+umask 077
 
 # --- resolve this script's real dir (follow the ~/.local/bin symlink) ---
 SOURCE="${BASH_SOURCE[0]}"
@@ -50,7 +51,7 @@ usage() {
     printf '%sproxy%s — mihomo (Clash.Meta) 管理 CLI\n\n' "${C_B}${C_Y}" "$n"
 
     printf '  %s📦 安装%s\n' "${C_B}" "$n"
-    printf '  %-*s %s\n' "$w" "install [--via github|brew|gz] [--bin PATH]" "检测/下载 mihomo + 引导配置 + 装钩子"
+    printf '  %-*s %s\n' "$w" "install [--via github|brew|gz:FILE] [--bin PATH]" "检测/下载 mihomo + 引导配置 + 装钩子"
     printf '  %-*s %s\n' "$w" "init" "仅初始化配置 + 钩子 (已有二进制)"
     printf '  %-*s %s\n' "$w" "upgrade" "升级 mihomo"
     printf '  %-*s %s\n' "$w" "uninstall" "移除钩子/软链 (配置保留)"
@@ -67,7 +68,7 @@ usage() {
     printf '  %-*s %s\n' "$w" "region list | apply | preset | add | rm | set" "地区自动组 (HK/SG/JP/US 一键预设)"
     printf '  %-*s %s\n' "$w" "sub add | rm | list | use | show | refresh" "多订阅管理 (refresh 自动重放 merge)"
     printf '  %-*s %s\n' "$w" "merge list | add | rm | diff | apply" "前置规则管理 (校验通过才生效)"
-    printf '  %-*s %s\n' "$w" "tun on | off [--setup-nopasswd]" "透明 TUN (需 root)"
+    printf '  %-*s %s\n' "$w" "tun on | off" "透明 TUN (需 sudo/root)"
     printf '\n'
 
     printf '  %s🧰 工具%s\n' "${C_B}" "$n"
@@ -75,7 +76,7 @@ usage() {
     printf '  %-*s %s\n' "$w" "check" "系统代理 + 外网连通性检查"
     printf '  %-*s %s\n' "$w" "route <URL> [--json]" "路由检测: 代理 vs 直连对比延迟"
     printf '  %-*s %s\n' "$w" "monitor [--interval 秒] [--sort down|up] [--once]" "实时流量监控 (Ctrl-C 退出)"
-    printf '  %-*s %s\n' "$w" "ui [--secret [VALUE]] | off | status" "Web 仪表盘 (局域网访问)"
+    printf '  %-*s %s\n' "$w" "ui [--secret [VALUE]|--no-secret] | off | status" "Web 仪表盘 (默认随机密码)"
     printf '  %-*s %s\n' "$w" "lan on | off | status" "allow-lan 开关 (局域网设备代理, 订阅刷新后保留)"
     printf '  %-*s %s\n' "$w" "pool on | off | status | refresh" "节点池模式: 全机场节点归一化合并 + 无感自动切换"
     printf '  %-*s %s\n' "$w" "sync export | import | push | pull" "多端同步 merge/region/订阅/设置 (对标 scripts secret)"

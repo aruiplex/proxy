@@ -103,21 +103,25 @@ route_test_url() {
 
     if (( json_out )); then
         json_guard
-        python3 -c "
+        python3 - "$url" "$domain" "$addr" "$proxy_raw" "$direct_raw" <<'PY'
 import json
+import sys
+
 def p(raw):
     parts = raw.split()
     if parts[0] == 'FAIL':
         return {'ok': False, 'error': ' '.join(parts[1:])}
     return {'ok': True, 'http_code': int(parts[0]), 'time_s': float(parts[1]), 'size_bytes': int(parts[2])}
+
+url, domain, addr, proxy_raw, direct_raw = sys.argv[1:6]
 print(json.dumps({
-    'url': '${url//\'/\\\'}',
-    'domain': '${domain//\'/\\\'}',
-    'proxy_addr': 'http://${addr//\'/\\\'}',
-    'proxy': p('${proxy_raw//\'/\\\'}'),
-    'direct': p('${direct_raw//\'/\\\'}')
+    'url': url,
+    'domain': domain,
+    'proxy_addr': 'http://' + addr,
+    'proxy': p(proxy_raw),
+    'direct': p(direct_raw)
 }, indent=2))
-"
+PY
         return
     fi
 

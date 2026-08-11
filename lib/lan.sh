@@ -30,10 +30,11 @@ lan_cmd() {
     esac
 }
 
-# rewrite allow-lan (+ bind-address) in config.yaml, in place
+# Rewrite allow-lan (+ bind-address) through a validated temporary config.
 _lan_patch() { # <true|false>
-    local v=$1
-    python3 - "$CONFIG" "$v" <<'PY'
+    local v=$1 tmp="$CONFIG.lan-tmp"
+    cp -f "$CONFIG" "$tmp" || die "无法创建 LAN 配置临时文件"
+    if ! python3 - "$tmp" "$v" <<'PY'
 import sys, re
 path, v = sys.argv[1], sys.argv[2]
 t = open(path).read()
@@ -46,18 +47,30 @@ def set_kv(name, val):
 set_kv('allow-lan', v)
 if v == 'true':
     set_kv('bind-address', "'*'")
+else:
+    set_kv('bind-address', "'127.0.0.1'")
 open(path, 'w').write(t)
 PY
+    then
+        rm -f "$tmp"
+        die "生成 LAN 配置失败"
+    fi
+    if ! mihomo_test "$tmp"; then
+        rm -f "$tmp"
+        die "LAN 配置校验失败, 原配置未改动"
+    fi
+    cp -f "$CONFIG" "$BAK" || { rm -f "$tmp"; die "无法备份配置"; }
+    mv -f "$tmp" "$CONFIG" || { rm -f "$tmp"; die "无法替换配置"; }
 }
 
 lan_set() {
     local v=$1
     [[ -f "$CONFIG" ]] || die "无 $CONFIG (先: proxy init)"
-    conf_set lan "$v"
     _lan_patch "$([[ "$v" == on ]] && echo true || echo false)"
+    conf_set lan "$v"
     # shellcheck source=service.sh
     source "$SCRIPT_DIR/lib/service.sh"
-    svc_apply >/dev/null 2>&1
+    svc_apply || { warn "配置已保存，但未能应用到运行中的 mihomo"; return 1; }
     if [[ "$v" == on ]]; then
         local ip port
         if [[ "$(uname -s)" == "Darwin" ]]; then

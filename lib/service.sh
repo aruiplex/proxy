@@ -3,27 +3,85 @@
 # controller), independent of how it was installed (brew/gz/github), so behavior
 # is identical across machines.
 
-svc_pid() { local bin; bin=$(mihomo_bin 2>/dev/null) || bin='mihomo'; pgrep -f "$(printf '%s' "$bin" | sed 's/[].\\*[]/\\&/g') -d" | head -1; }
-# any mihomo process at all (catches foreign/brew-managed instances our -d pattern misses)
+_svc_pid_matches() {
+    local pid=$1 bin uid
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    bin=$(mihomo_bin 2>/dev/null) || return 1
+    uid=$(ps -p "$pid" -o uid= 2>/dev/null | tr -d ' ')
+    [[ "$uid" == "$(id -u)" || "$uid" == 0 ]] || return 1
+    python3 - "$pid" "$bin" "$CONF_DIR" "$CONFIG" <<'PY' >/dev/null 2>&1
+import os, shlex, subprocess, sys
+pid, binary, confdir, config = sys.argv[1:5]
+try:
+    raw = open('/proc/%s/cmdline' % pid, 'rb').read()
+    argv = [x.decode(errors='replace') for x in raw.split(b'\0') if x]
+except Exception:
+    try:
+        command = subprocess.check_output(
+            ['ps', '-ww', '-p', pid, '-o', 'command='], text=True).strip()
+        argv = shlex.split(command)
+    except Exception:
+        raise SystemExit(1)
+if not argv:
+    raise SystemExit(1)
+try:
+    exe = os.path.realpath(os.readlink('/proc/%s/exe' % pid))
+except Exception:
+    exe = os.path.realpath(argv[0])
+if exe.endswith(' (deleted)'):
+    exe = exe[:-10]
+if exe != os.path.realpath(binary):
+    raise SystemExit(1)
+def exact_arg(flag, value):
+    return any(argv[i] == flag and argv[i + 1] == value for i in range(len(argv) - 1))
+raise SystemExit(0 if exact_arg('-d', confdir) and exact_arg('-f', config) else 1)
+PY
+}
+
+_svc_find_pid() {
+    local pid
+    while IFS= read -r pid; do
+        _svc_pid_matches "$pid" && { printf '%s' "$pid"; return 0; }
+    done < <(pgrep -x mihomo 2>/dev/null)
+    return 1
+}
+
+svc_pid() {
+    local pid
+    pid=$(cat "$PID_FILE" 2>/dev/null)
+    if _svc_pid_matches "$pid"; then
+        printf '%s' "$pid"
+        return 0
+    fi
+    pid=$(_svc_find_pid) || { rm -f "$PID_FILE"; return 1; }
+    printf '%s\n' "$pid" > "$PID_FILE"
+    printf '%s' "$pid"
+}
+
+# Any foreign mihomo process, used only for diagnostics. Never signal it.
 svc_any() { pgrep -x mihomo 2>/dev/null | head -1; }
 
 # release a brew-managed mihomo so its supervisor doesn't respawn it under us
-_brew_stop() { has brew && brew services stop mihomo >/dev/null 2>&1 || true; }
+_brew_stop() {
+    [[ "$(conf_get install_method)" == brew ]] && has brew \
+        && brew services stop mihomo >/dev/null 2>&1 || true
+}
 
 svc_start() {
+    require python3
     local bin
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制 (运行 proxy install)"
     [[ -f "$CONFIG" ]] || die "未找到 config.yaml: $CONFIG (运行 proxy init)"
     if [[ -n "$(svc_pid)" ]]; then warn "已在运行 (pid $(svc_pid))"; return 0; fi
-    # a foreign mihomo (brew services / stray) holding the port would make our
-    # start fail on 7890 — stop it first.
+    # Never kill a foreign instance; if it owns our ports, startup will fail
+    # with a useful log instead of destroying another user's service.
     if [[ -n "$(svc_any)" ]]; then
-        warn "已有非本工具管理的 mihomo 在跑 (pid $(svc_any); 可能 brew services); 先停掉"
-        svc_stop
+        warn "检测到其他 mihomo 实例 (pid $(svc_any)); 不会自动停止它"
     fi
     mkdir -p "$CONF_DIR"
     info "启动 mihomo ..."
     nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
+    printf '%s\n' "$!" > "$PID_FILE"
     local i
     for i in 1 2 3 4 5; do
         sleep 0.5
@@ -40,19 +98,27 @@ svc_start() {
 }
 
 svc_stop() {
+    require python3
     _brew_stop
-    local pids
-    pids=$( { svc_pid; svc_any; } | sort -u | grep -v '^$' )
-    [[ -n "$pids" ]] || { info "未在运行"; return 0; }
-    info "停止 mihomo (pid: $(echo $pids | tr '\n' ' ')) ..."
-    kill $pids 2>/dev/null
+    local pid
+    pid=$(svc_pid)
+    [[ -n "$pid" ]] || { info "未在运行"; return 0; }
+    info "停止 mihomo (pid: $pid) ..."
+    kill "$pid" 2>/dev/null || { warn "无法停止 pid $pid (可能需要 sudo)"; return 1; }
     local i
-    for i in $(seq 1 20); do [[ -z "$(svc_any)" ]] && break; sleep 0.2; done
-    [[ -n "$(svc_any)" ]] && { warn "未退出，发送 KILL"; pkill -9 -x mihomo 2>/dev/null; }
+    for i in $(seq 1 20); do [[ -z "$(svc_pid)" ]] && { rm -f "$PID_FILE"; ok "已停止"; return 0; }; sleep 0.2; done
+    warn "未退出，向 pid $pid 发送 KILL"
+    kill -9 "$pid" 2>/dev/null || return 1
+    sleep 0.2
+    if _svc_pid_matches "$pid"; then
+        warn "mihomo pid $pid 仍在运行"
+        return 1
+    fi
+    rm -f "$PID_FILE"
     ok "已停止"
 }
 
-svc_restart() { svc_stop >/dev/null 2>&1; svc_start; }
+svc_restart() { svc_stop >/dev/null 2>&1 || return 1; svc_start; }
 
 # Apply the on-disk config: hot-reload via the controller; if the controller is
 # unreachable (000), fall back to stop+start so the new config actually takes
@@ -64,10 +130,10 @@ svc_apply() {
         204|200) ok "已热重载" ;;
         000)
             warn "控制器无响应, 重启 mihomo 以应用新配置 ..."
-            svc_stop >/dev/null 2>&1
+            svc_stop >/dev/null 2>&1 || { warn "无法停止旧 mihomo 实例"; return 1; }
             svc_start
             ;;
-        *) warn "热重载 HTTP $code; 可 proxy restart" ;;
+        *) warn "热重载 HTTP $code; 可 proxy restart"; return 1 ;;
     esac
 }
 
@@ -76,7 +142,8 @@ svc_apply() {
 # This turns "9090 ↓, restart it" into a precise diagnosis (foreign config, missing
 # field, wrong config file, or port conflict).
 _svc_diag() {
-    local pid; pid=$(svc_any)
+    local pid; pid=$(svc_pid)
+    [[ -n "$pid" ]] || pid=$(svc_any)
     if [[ -z "$pid" ]]; then
         say "  诊断: 无 mihomo 进程; 运行 proxy start"
         return

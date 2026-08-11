@@ -27,10 +27,13 @@ detect_arch() {
 detect_amd64_variant() {
     [[ "$(detect_arch)" == "amd64" ]] || { printf 'compatible'; return; }
     if [[ -r /proc/cpuinfo ]]; then
-        # avx2 is the gating instruction for the v3 build
-        if grep -qm1 '^flags' /proc/cpuinfo && grep -oE '^flags.*' /proc/cpuinfo | grep -qw avx2; then
-            printf 'v3'; return
-        fi
+        local flags need
+        flags=$(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null)
+        for need in avx avx2 bmi1 bmi2 f16c fma movbe xsave; do
+            printf '%s' "$flags" | grep -qw "$need" || { printf 'compatible'; return; }
+        done
+        printf '%s' "$flags" | grep -Eqw 'abm|lzcnt' || { printf 'compatible'; return; }
+        printf 'v3'; return
     fi
     printf 'compatible'
 }
@@ -57,9 +60,9 @@ detect_existing_config() {
 
 # is mihomo currently running (our instance or any)?
 detect_running() {
-    local bin pid
-    bin=$(mihomo_bin 2>/dev/null) || bin='mihomo'
-    pgrep -f "$(printf '%s' "$bin" | sed 's/[].\\*[]/\\&/g') -d" >/dev/null 2>&1
+    # shellcheck source=service.sh
+    source "$SCRIPT_DIR/lib/service.sh"
+    svc_pid >/dev/null 2>&1
 }
 
 # one-shot environment summary for `proxy doctor` / debugging

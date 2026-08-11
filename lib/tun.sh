@@ -1,7 +1,10 @@
 # shellcheck shell=bash
 # proxy/lib/tun.sh — transparent TUN mode. Needs root (cap_net_admin + routing).
-# `proxy tun on/off` uses interactive sudo by default; `--setup-nopasswd` writes a
-# single-command NOPASSWD sudoers fragment so the toggle can run unattended.
+# `proxy tun on/off` uses interactive sudo. Passwordless setup is intentionally
+# disabled because granting root execution to a user-writable binary is unsafe.
+
+# shellcheck source=service.sh
+source "$SCRIPT_DIR/lib/service.sh"
 
 tun_cmd() {
     local sub=${1:-}; shift || true
@@ -9,7 +12,7 @@ tun_cmd() {
         on)              tun_set on "$@" ;;
         off)             tun_set off "$@" ;;
         --setup-nopasswd) tun_setup_nopasswd "$@" ;;
-        -h|--help|"") say "用法: proxy tun on | off | --setup-nopasswd" ;;
+        -h|--help|"") say "用法: proxy tun on | off  (需要 sudo; 免密模式因安全原因已停用)" ;;
         *) die "proxy tun: 未知子命令 $sub" ;;
     esac
 }
@@ -22,25 +25,33 @@ tun_write_block() {
     python3 - "$CONFIG" "$val" "$tmp" <<'PY'
 import sys
 src, val, dst = sys.argv[1], sys.argv[2], sys.argv[3]
-lines = open(src).read().split('\n')
+lines = open(src).read().splitlines()
 out = []
 i, n = 0, len(lines)
+block = ["tun:", "  enable: %s" % val, "  stack: gvisor", "  dns-hijack:",
+         "    - any:53", "  auto-route: true", "  auto-detect-interface: true"]
+replaced = False
 while i < n:
     L = lines[i]
     if L.startswith('tun:') and (len(L) == 4 or L[4] in ' \t#'):
         i += 1
-        while i < n and (lines[i] == '' or lines[i][0] in ' \t' or lines[i].startswith('#')):
+        while i < n and (not lines[i].strip() or lines[i][0] in ' \t'):
             i += 1
+        out.extend(block)
+        if i < n and lines[i].strip():
+            out.append('')
+        out.extend(lines[i:])
+        replaced = True
         break
     out.append(L); i += 1
-block = ("tun:\n  enable: %s\n  stack: gvisor\n  dns-hijack:\n    - any:53\n"
-         "  auto-route: true\n  auto-detect-interface: true") % val
-if out and out[-1] != '':
-    out.append('')
-out.append(block)
+if not replaced:
+    if out and out[-1] != '':
+        out.append('')
+    out.extend(block)
 open(dst, 'w').write('\n'.join(out) + '\n')
 PY
-    mv -f "$tmp" "$CONFIG"
+    [[ -s "$tmp" ]] || { rm -f "$tmp"; die "生成 TUN 配置失败"; }
+    mv -f "$tmp" "$CONFIG" || { rm -f "$tmp"; die "替换 TUN 配置失败"; }
 }
 
 # stop mihomo whether it runs as the user or as root
@@ -50,59 +61,118 @@ tun_stop_any() {
     kill "$pid" 2>/dev/null
     local i; for i in $(seq 1 20); do [[ -z "$(svc_pid)" ]] && return 0; sleep 0.2; done
     if [[ "$(id -u)" -ne 0 ]] && has sudo; then
-        sudo kill "$pid" 2>/dev/null
+        sudo kill "$pid" 2>/dev/null || return 1
         for i in $(seq 1 20); do [[ -z "$(svc_pid)" ]] && return 0; sleep 0.2; done
-        sudo kill -9 "$pid" 2>/dev/null
+        sudo kill -9 "$pid" 2>/dev/null || return 1
+    elif [[ "$(id -u)" -eq 0 ]]; then
+        kill -9 "$pid" 2>/dev/null || return 1
+    fi
+    for i in 1 2 3 4 5; do [[ -z "$(svc_pid)" ]] && return 0; sleep 0.2; done
+    return 1
+}
+
+_tun_start_privileged() {
+    local bin=$1
+    if [[ "$(id -u)" -eq 0 ]]; then
+        nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
+    else
+        sudo -v || return 1
+        nohup sudo "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
     fi
 }
 
+_tun_restore_previous() {
+    local bin=$1 was_running=$2 old_tun i
+    cp -f "$BAK" "$CONFIG" || return 1
+    (( was_running )) || return 0
+    old_tun=$(awk '/^tun:/{f=1;next} f&&/^[^[:space:]]/{f=0} f&&/enable:[[:space:]]*true/{print 1;exit}' "$CONFIG")
+    if [[ "$old_tun" == 1 ]]; then
+        _tun_start_privileged "$bin" || return 1
+        for i in 1 2 3 4 5; do
+            sleep 0.5
+            [[ -n "$(svc_pid)" ]] && ctrl_up && return 0
+        done
+        return 1
+    else
+        ( svc_start ) || return 1
+        ctrl_up
+    fi
+}
+
+_tun_recover_or_warn() {
+    if _tun_restore_previous "$1" "$2" >/dev/null 2>&1; then
+        warn "已恢复原配置与原运行模式"
+        return 0
+    fi
+    warn "原配置已恢复，但原运行模式恢复失败，mihomo 可能仍处于停止状态"
+    return 1
+}
+
 tun_set() {
-    local mode=$1 bin
+    local mode=$1 bin was_running=0
+    require python3
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制"
     [[ -f "$CONFIG" ]] || die "无 $CONFIG (先: proxy init)"
-    local sudo_=$(detect_sudo)
+    [[ -n "$(svc_pid)" ]] && was_running=1
+    local sudo_; sudo_=$(detect_sudo)
     if [[ "$mode" == "on" ]]; then
         [[ "$sudo_" == "none" ]] && die "TUN 需要 root, 但本机无 sudo 权限"
-        cp -f "$CONFIG" "$BAK"
+        cp -f "$CONFIG" "$BAK" || die "无法备份配置"
         tun_write_block true
         if ! mihomo_test "$CONFIG"; then
             warn "配置校验失败, 已还原"; cp -f "$BAK" "$CONFIG"; return 1
         fi
         info "以 root 启动 mihomo (TUN 需要特权), 可能需要输入密码 ..."
-        tun_stop_any >/dev/null 2>&1
-        sudo nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
-        sleep 1
-        if [[ -n "$(svc_pid)" ]]; then ok "TUN 已开启 (root pid $(svc_pid))"; else die "启动失败, 查 proxy log"; fi
+        if ! tun_stop_any >/dev/null 2>&1; then
+            cp -f "$BAK" "$CONFIG"
+            die "无法停止旧 mihomo，TUN 配置已还原"
+        fi
+        if ! _tun_start_privileged "$bin"; then
+            if _tun_recover_or_warn "$bin" "$was_running"; then
+                die "sudo 启动失败，已恢复原运行模式"
+            else
+                die "sudo 启动失败，且原运行模式恢复失败"
+            fi
+        fi
+        local i
+        for i in 1 2 3 4 5; do
+            sleep 0.5
+            [[ -n "$(svc_pid)" ]] && ctrl_up && break
+        done
+        if [[ -n "$(svc_pid)" ]] && ctrl_up; then
+            ok "TUN 已开启 (root pid $(svc_pid))"
+        else
+            tun_stop_any >/dev/null 2>&1 || true
+            _tun_recover_or_warn "$bin" "$was_running" || true
+            die "TUN 启动失败; 查 proxy log"
+        fi
     else
-        cp -f "$CONFIG" "$BAK"
+        cp -f "$CONFIG" "$BAK" || die "无法备份配置"
         tun_write_block false
         mihomo_test "$CONFIG" || { warn "配置校验失败, 已还原"; cp -f "$BAK" "$CONFIG"; return 1; }
         info "关闭 TUN, 以普通用户重启 mihomo ..."
-        tun_stop_any >/dev/null 2>&1
-        nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
-        sleep 1
-        if [[ -n "$(svc_pid)" ]]; then ok "TUN 已关闭, mihomo 已重启 (pid $(svc_pid))"; else die "启动失败, 查 proxy log"; fi
+        if ! tun_stop_any >/dev/null 2>&1; then
+            cp -f "$BAK" "$CONFIG"
+            die "无法停止 TUN 实例，配置已还原"
+        fi
+        if ( svc_start ); then
+            ok "TUN 已关闭, mihomo 已重启 (pid $(svc_pid))"
+        else
+            _tun_recover_or_warn "$bin" "$was_running" || true
+            die "普通模式启动失败; 查 proxy log"
+        fi
     fi
 }
 
-# write a sudoers fragment allowing the current user to run ONLY this exact mihomo
-# start command without a password; verified with visudo before it takes effect.
 tun_setup_nopasswd() {
-    local bin user cmd frag
-    bin=$(mihomo_bin) || die "未找到 mihomo 二进制"
-    [[ "$(detect_sudo)" == "none" ]] && die "本机无 sudo, 无法配置"
-    user=$(id -un)
-    cmd="$bin -d $CONF_DIR -f $CONFIG"
-    frag="$user ALL=(root) NOPASSWD: $cmd"
-    info "写入 /etc/sudoers.d/proxy-mihomo (仅允许: $cmd)"
-    if ! echo "$frag" | sudo tee /etc/sudoers.d/proxy-mihomo >/dev/null 2>&1; then
-        die "写入失败 (需要密码或权限)"
+    if [[ -e /etc/sudoers.d/proxy-mihomo ]]; then
+        if [[ "$(id -u)" -eq 0 ]]; then
+            rm -f /etc/sudoers.d/proxy-mihomo || die "旧 sudoers 规则移除失败"
+        else
+            sudo rm -f /etc/sudoers.d/proxy-mihomo \
+                || die "旧 sudoers 规则不安全且移除失败，请手动删除"
+        fi
+        warn "已移除旧的 proxy-mihomo NOPASSWD 规则"
     fi
-    sudo chmod 440 /etc/sudoers.d/proxy-mihomo
-    if sudo visudo -c -f /etc/sudoers.d/proxy-mihomo >/dev/null 2>&1; then
-        ok "已配置 NOPASSWD; 之后 proxy tun on/off 不再需要密码"
-    else
-        sudo rm -f /etc/sudoers.d/proxy-mihomo
-        die "sudoers 校验失败, 已移除片段, 未生效"
-    fi
+    die "--setup-nopasswd 已停用：mihomo 位于用户可写目录时会造成免密 root 执行风险"
 }

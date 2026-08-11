@@ -20,6 +20,17 @@ MERGE_FILE="$CONF_DIR/merge.yaml"
 PROXY_CONF="$CONF_DIR/proxy.conf"
 ENV_STATE="$CONF_DIR/env.state"
 BAK="$CONFIG.bak"
+PID_FILE="$CONF_DIR/mihomo.pid"
+
+# Repair permissions from older versions that created credential-bearing files
+# under the caller's default umask.
+[[ -d "$CONF_DIR" ]] && chmod 700 "$CONF_DIR" 2>/dev/null || true
+for _private in "$CONFIG" "$BAK" "$PROXY_CONF" "$ENV_STATE" \
+                "$CONF_DIR/subs.conf" "$CONF_DIR/regions.conf" "$CONF_DIR/merge.yaml" \
+                "$CONF_DIR"/pool-state/*.prox; do
+    [[ -f "$_private" ]] && chmod 600 "$_private" 2>/dev/null
+done
+unset _private
 
 # --- logging ---
 die()  { printf "${C_R}[proxy] %s${C_N}\n" "$*" >&2; exit 1; }
@@ -38,12 +49,19 @@ conf_get() {
     awk -F'=' -v k="$k" '$1==k {sub(/^[^=]*=/,""); print; exit}' "$PROXY_CONF"
 }
 conf_set() {
-    local k=$1 v=$2
-    mkdir -p "$CONF_DIR"
-    touch "$PROXY_CONF"; chmod 600 "$PROXY_CONF"
+    local k=$1 v=$2 tmp
+    [[ "$k" =~ ^[A-Za-z0-9_]+$ ]] || die "非法配置键: $k"
+    [[ "$v" != *$'\n'* && "$v" != *$'\r'* ]] || die "配置值不能包含换行: $k"
+    mkdir -p "$CONF_DIR" || die "无法创建配置目录: $CONF_DIR"
+    tmp=$(mktemp "$CONF_DIR/.proxy.conf.tmp.XXXXXX") || die "无法创建配置临时文件"
+    chmod 600 "$tmp" || { rm -f "$tmp"; die "无法保护配置临时文件"; }
     # drop any existing key= line, then append the new value verbatim
-    { grep -v "^${k}=" "$PROXY_CONF" 2>/dev/null; printf '%s=%s\n' "$k" "$v"; } > "$PROXY_CONF.tmp"
-    mv -f "$PROXY_CONF.tmp" "$PROXY_CONF"; chmod 600 "$PROXY_CONF"
+    if ! { grep -v "^${k}=" "$PROXY_CONF" 2>/dev/null; printf '%s=%s\n' "$k" "$v"; } > "$tmp"; then
+        rm -f "$tmp"
+        die "写入配置失败: $PROXY_CONF"
+    fi
+    mv -f "$tmp" "$PROXY_CONF" || { rm -f "$tmp"; die "替换配置失败: $PROXY_CONF"; }
+    chmod 600 "$PROXY_CONF" || die "无法设置配置权限: $PROXY_CONF"
 }
 
 # resolve the configured mihomo binary path; fall back to a search
@@ -68,28 +86,66 @@ controller_addr() {
 }
 _secret() { conf_get secret; }
 
+_json_quote() {
+    local v=$1
+    if has python3; then
+        python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$v"
+        return
+    fi
+    v=${v//\\/\\\\}; v=${v//\"/\\\"}
+    v=${v//$'\n'/\\n}; v=${v//$'\r'/\\r}; v=${v//$'\t'/\\t}
+    printf '"%s"' "$v"
+}
+
+_curl_cfg_escape() {
+    local v=$1
+    v=${v//\\/\\\\}; v=${v//\"/\\\"}
+    printf '%s' "$v"
+}
+
+curl_download_private() { # <url> <output> [user-agent]
+    local url=$1 out=$2 ua=${3:-}
+    {
+        printf 'url = "%s"\n' "$(_curl_cfg_escape "$url")"
+        [[ -n "$ua" ]] && printf 'user-agent = "%s"\n' "$(_curl_cfg_escape "$ua")"
+    } | curl -fsSL --max-time 30 --config - -o "$out"
+}
+
+_ctrl_curl_config() { # <url> <secret>
+    printf 'url = "%s"\n' "$(_curl_cfg_escape "$1")"
+    [[ -n "$2" ]] && printf 'header = "Authorization: Bearer %s"\n' "$(_curl_cfg_escape "$2")"
+}
+
 # GET a controller path; prints body to stdout
 ctrl_get() {
-    local path=$1 s; s=$(_secret)
-    curl -sS --max-time 8 ${s:+-H "Authorization: Bearer $s"} "http://$(controller_addr)$path"
+    local path=$1 s url; s=$(_secret); url="http://$(controller_addr)$path"
+    _ctrl_curl_config "$url" "$s" | curl -fsS --max-time 8 --config -
 }
 # PUT a controller path with a JSON body; prints http code
 ctrl_put() {
-    local path=$1 body=$2 s; s=$(_secret)
-    curl -sS --max-time 8 -X PUT ${s:+-H "Authorization: Bearer $s"} \
-        -H 'Content-Type: application/json' -d "$body" -o /dev/null -w '%{http_code}' \
-        "http://$(controller_addr)$path"
+    local path=$1 body=$2 s url; s=$(_secret); url="http://$(controller_addr)$path"
+    _ctrl_curl_config "$url" "$s" | curl -sS --max-time 8 -X PUT --config - \
+        -H 'Content-Type: application/json' -d "$body" -o /dev/null -w '%{http_code}'
 }
 # hot-reload config from a given file path; prints http code (204/200 ok; 400 invalid, instance stays up)
 ctrl_reload() {
-    local f=$1 s; s=$(_secret)
-    curl -sS --max-time 8 -X PUT ${s:+-H "Authorization: Bearer $s"} \
-        -H 'Content-Type: application/json' -d "{\"path\":\"$f\"}" -o /dev/null -w '%{http_code}' \
-        "http://$(controller_addr)/configs?force=true"
+    local f=$1 s body url; s=$(_secret)
+    body="{\"path\":$(_json_quote "$f")}"
+    url="http://$(controller_addr)/configs?force=true"
+    _ctrl_curl_config "$url" "$s" | curl -sS --max-time 8 -X PUT --config - \
+        -H 'Content-Type: application/json' -d "$body" -o /dev/null -w '%{http_code}'
 }
 
 # true if the controller answers /version (i.e. external-controller is up)
-ctrl_up() { ctrl_get /version >/dev/null 2>&1; }
+ctrl_up() {
+    local body
+    body=$(ctrl_get /version 2>/dev/null) || return 1
+    [[ -n "$body" ]] || return 1
+    has python3 || return 0
+    printf '%s' "$body" | python3 -c \
+        'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("version") else 1)' \
+        >/dev/null 2>&1
+}
 
 # die with an actionable message when the controller is unreachable — most
 # "no node group / empty status" reports are really this, not a missing group.

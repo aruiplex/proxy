@@ -115,10 +115,10 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy sub use <name> [--no-refresh]` | 切换活跃订阅并立即拉取应用 |
 | `proxy sub refresh [name]` | 刷新活跃（或指定）订阅；自动重新前置 merge |
 | `proxy sub set <URL>` | 旧用法：存为 default + 激活 + 拉取 |
-| `proxy tun on \| off \| --setup-nopasswd` | 透明 TUN（需 root） |
+| `proxy tun on \| off` | 透明 TUN（需 sudo/root；不提供不安全的免密用户二进制执行） |
 | `proxy route <URL> [--json]` | URL 路由检测：分别通过代理和直连访问目标 URL，对比连通性与延迟；`--json` 输出机器可读结果 |
 | `proxy monitor [--interval <秒>] [--sort down\|up\|name] [--once]` | 实时流量监控：持续显示速率/累计流量/活动连接表（主机、规则、链路、上下行），Ctrl-C 退出；`--once` 单帧输出供脚本使用 |
-| `proxy ui [--secret [VALUE]] \| off \| status` | Web 仪表盘 (metacubexd)：默认无密码改绑 `0.0.0.0`，局域网任意机器访问 `http://<IP>:9090/ui/`；`--secret` 设密码（无值=随机生成）；`off` 撤回为仅本机；`status` 查看当前状态 |
+| `proxy ui [--secret [VALUE]\|--no-secret] \| off \| status` | Web 仪表盘 (metacubexd)：默认生成随机密码并改绑 `0.0.0.0`；`--no-secret` 明确启用危险的无密码模式；`off` 撤回为仅本机；`status` 查看当前状态 |
 | `proxy lan on \| off \| status` | allow-lan 开关：局域网设备用本机作代理（持久化，订阅刷新后保留） |
 | `proxy pool on \| off \| status \| refresh` | 节点池模式：全机场节点语义归一化合并 + mihomo fallback 无感自动切换 |
 | `proxy sync export \| import \| push \| pull` | 多端配置同步（merge/region/订阅/可迁移设置，对标 `scripts secret push/pull`） |
@@ -296,8 +296,6 @@ TUN 让所有流量（不止配了代理变量的程序）透明走 mihomo，需
 ```bash
 proxy tun on               # 写 tun.enable=true, sudo 启动(交互输密码)
 proxy tun off              # 关 TUN, 普通用户重启
-proxy tun --setup-nopasswd  # 写 /etc/sudoers.d/proxy-mihomo(仅限单条 mihomo 启动命令),
-                            # 经 visudo -c 校验; 之后 tun on/off 免密
 ```
 
 无 sudo 时 `tun` 降级提示。TUN 开启后环境变量注入可省（全局透明），但开关仍兼容。
@@ -314,7 +312,7 @@ proxy tun --setup-nopasswd  # 写 /etc/sudoers.d/proxy-mihomo(仅限单条 mihom
 4. 应用：控制器热重载 `PUT /configs`；若控制器不可达（000，即运行实例没开
    `external-controller`），**自动 stop+start** 把新配置真正加载——否则会出现"看似成功、
    实则没生效"（配置在磁盘、运行实例还用旧的）。因配置已先过 `mihomo -t`，此重启是安全的。
-5. `tun --setup-nopasswd` 写的 sudoers 片段**仅限单条**命令，并 `visudo -c` 校验。
+5. 不生成 NOPASSWD 规则：用户可写的 mihomo 二进制不能安全地获得免密 root 执行权限。
 
 ---
 

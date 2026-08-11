@@ -4,31 +4,55 @@
 # `eval "$(proxy _login 2>/dev/null)"` at shell start: _login prints export/unset
 # lines to stdout (applied by the parent) and keeps all diagnostics on stderr.
 
-# the proxy listen address: configured, else parsed from config mixed-port, else 7890
-proxy_addr() {
+_env_custom_addr() {
     local a; a=$(conf_get proxy_addr)
-    [[ -n "$a" ]] && { printf '%s' "$a"; return; }
-    local port
-    port=$(awk '/^mixed-port:/{print $2;exit}' "$CONFIG" 2>/dev/null)
-    port=${port:-7890}
+    if [[ "$a" =~ ^(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9._-]+):([1-9][0-9]*)$ ]] \
+       && (( BASH_REMATCH[2] >= 1 && BASH_REMATCH[2] <= 65535 )); then
+        printf '%s' "$a"
+        return 0
+    fi
+    return 1
+}
+
+_env_config_port() {
+    local key=$1 port
+    port=$(awk -v k="$key" '$0 ~ "^"k":[[:space:]]*[0-9]+[[:space:]]*$" {print $2;exit}' "$CONFIG" 2>/dev/null)
+    [[ "$port" =~ ^[1-9][0-9]*$ ]] && (( port <= 65535 )) || return 1
+    printf '%s' "$port"
+}
+
+proxy_addr() {
+    local addr port
+    addr=$(_env_custom_addr) && { printf '%s' "$addr"; return; }
+    port=$(_env_config_port mixed-port) || port=$(_env_config_port port) || port=7890
+    printf '127.0.0.1:%s' "$port"
+}
+
+proxy_socks_addr() {
+    local addr port
+    addr=$(_env_custom_addr) && { printf '%s' "$addr"; return; }
+    port=$(_env_config_port mixed-port) || port=$(_env_config_port socks-port) || return 1
     printf '127.0.0.1:%s' "$port"
 }
 
 # print export/unset lines based on the on/off toggle (no side effects, no logging)
 _env_exports() {
-    local st addr
+    local st addr socks
     st=$(cat "$ENV_STATE" 2>/dev/null)
     addr=$(proxy_addr)
+    socks=$(proxy_socks_addr)
     if [[ "$st" == "on" ]]; then
-        printf 'export http_proxy=http://%s\n' "$addr"
-        printf 'export https_proxy=http://%s\n' "$addr"
-        printf 'export all_proxy=socks5://%s\n' "$addr"
-        printf 'export HTTP_PROXY=http://%s\n' "$addr"
-        printf 'export HTTPS_PROXY=http://%s\n' "$addr"
-        printf 'export ALL_PROXY=socks5://%s\n' "$addr"
+        printf 'export http_proxy=%q\n' "http://$addr"
+        printf 'export https_proxy=%q\n' "http://$addr"
+        if [[ -n "$socks" ]]; then printf 'export all_proxy=%q\n' "socks5h://$socks"
+        else printf 'unset all_proxy ALL_PROXY\n'; fi
+        printf 'export HTTP_PROXY=%q\n' "http://$addr"
+        printf 'export HTTPS_PROXY=%q\n' "http://$addr"
+        [[ -n "$socks" ]] && printf 'export ALL_PROXY=%q\n' "socks5h://$socks"
         printf 'export no_proxy=localhost,127.0.0.1,::1\n'
+        printf 'export NO_PROXY=localhost,127.0.0.1,::1\n'
     else
-        printf 'unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY\n'
+        printf 'unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY\n'
     fi
 }
 
@@ -36,9 +60,17 @@ _env_exports() {
 # Interactivity is checked by the hook line itself (the parent shell); this always
 # emits so `eval "$(proxy _login)"` works regardless of this child's $-.
 env_login() {
-    local bin
-    if bin=$(mihomo_bin 2>/dev/null) && [[ -f "$CONFIG" ]] && ! detect_running; then
-        ( nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 & ) 2>/dev/null
+    local bin tun_enabled
+    if ! has python3; then
+        _env_exports
+        return
+    fi
+    # shellcheck source=service.sh
+    source "$SCRIPT_DIR/lib/service.sh"
+    tun_enabled=$(awk '/^tun:/{f=1;next} f&&/^[^[:space:]]/{f=0} f&&/enable:[[:space:]]*true/{print 1;exit}' "$CONFIG" 2>/dev/null)
+    if [[ "$tun_enabled" != 1 ]] && bin=$(mihomo_bin 2>/dev/null) && [[ -f "$CONFIG" ]] && ! svc_pid >/dev/null; then
+        ( nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
+          printf '%s\n' "$!" > "$PID_FILE" ) 2>/dev/null
     fi
     _env_exports
 }

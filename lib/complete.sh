@@ -5,7 +5,7 @@
 # node members (via the controller, short timeout), subscription names
 # (subs.conf), and merge rules (merge.yaml).
 
-_PROXY_COMPLETE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+: "${_PROXY_COMPLETE_DIR:=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)}"
 
 _proxy_complete() {
     local cur prev sub1 sub2
@@ -26,8 +26,8 @@ _proxy_complete() {
                 node)    COMPREPLY=( $(compgen -W "list test use" -- "$cur") ) ;;
                 merge)   COMPREPLY=( $(compgen -W "list add rm diff apply" -- "$cur") ) ;;
                 sub)     COMPREPLY=( $(compgen -W "add rm list use show refresh set" -- "$cur") ) ;;
-                tun)     COMPREPLY=( $(compgen -W "on off --setup-nopasswd" -- "$cur") ) ;;
-                ui)      COMPREPLY=( $(compgen -W "on off status --secret" -- "$cur") ) ;;
+                tun)     COMPREPLY=( $(compgen -W "on off" -- "$cur") ) ;;
+                ui)      COMPREPLY=( $(compgen -W "on off status --secret --no-secret" -- "$cur") ) ;;
                 lan)     COMPREPLY=( $(compgen -W "on off status" -- "$cur") ) ;;
                 pool)    COMPREPLY=( $(compgen -W "on off status refresh" -- "$cur") ) ;;
                 monitor) COMPREPLY=( $(compgen -W "--interval --sort --once" -- "$cur") ) ;;
@@ -44,15 +44,17 @@ _proxy_complete() {
                             # down controller hanging the tab (timeout where available).
                             # substring match (like `node use`), since names carry
                             # flag emojis that would defeat compgen prefix matching
-                            local IFS=$'\n' names n
+                            local IFS=$'\n' names n cur_lc n_lc
                             if command -v timeout >/dev/null 2>&1; then
                                 names=$(timeout 2 "$_PROXY_COMPLETE_DIR/proxy" node list 2>/dev/null | sed -n 's/^ *[0-9]*) //p')
                             else
                                 names=$("$_PROXY_COMPLETE_DIR/proxy" node list 2>/dev/null | sed -n 's/^ *[0-9]*) //p')
                             fi
                             COMPREPLY=()
+                            cur_lc=$(printf '%s' "$cur" | tr '[:upper:]' '[:lower:]')
                             for n in $names; do
-                                [[ -z "$cur" || "${n,,}" == *"${cur,,}"* ]] && COMPREPLY+=("$n")
+                                n_lc=$(printf '%s' "$n" | tr '[:upper:]' '[:lower:]')
+                                [[ -z "$cur" || "$n_lc" == *"$cur_lc"* ]] && COMPREPLY+=("$n")
                             done
                             ;;
                     esac

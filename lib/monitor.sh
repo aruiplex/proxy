@@ -18,7 +18,11 @@ monitor_cmd() {
             say "  --sort down|up|name  连接排序: 按下载/上传流量/主机名, 默认 down"
             say "  --once            只输出一帧后退出 (适合脚本)"
             ;;
-        *) monitor_run "$@" ;;
+        *)
+            if [[ -n "$sub" ]]; then monitor_run "$sub" "$@"
+            else monitor_run "$@"
+            fi
+            ;;
     esac
 }
 
@@ -53,7 +57,7 @@ monitor_run() {
         esac
     done
     case "$sort_key" in down|up|name) ;; *) die "proxy monitor: --sort 只支持 down|up|name" ;; esac
-    (( interval > 0 )) || die "proxy monitor: --interval 必须为正数"
+    [[ "$interval" =~ ^[1-9][0-9]*$ ]] || die "proxy monitor: --interval 必须为正整数"
 
     local tty=0
     [[ -t 1 ]] && tty=1
@@ -90,12 +94,14 @@ for c in rows:
     rule = c.get("rule") or "-"
     chains = c.get("chains") or []
     chain = ">".join(chains) if chains else "-"
-    print("ROW %s|%s|%s|%d|%d" % (host, rule, chain, c.get("upload", 0), c.get("download", 0)))
+    def clean(v):
+        return "".join(ch if ch >= " " and ch != "\x7f" else " " for ch in str(v)).replace("\t", " ")
+    print("ROW\t%s\t%s\t%s\t%d\t%d" % (clean(host), clean(rule), clean(chain), c.get("upload", 0), c.get("download", 0)))
 ' "$sort_key" "$limit" 2>/dev/null)
         [[ -z "$rows" ]] && { warn "解析 /connections 失败"; return 1; }
 
-        local lines up down count
-        mapfile -t lines <<< "$rows"
+        local lines=() row up down count
+        while IFS= read -r row; do lines+=("$row"); done <<< "$rows"
         read -r _ up down count <<< "${lines[0]}"
 
         # speed from totals delta (guard against counter reset on mihomo restart)
@@ -118,8 +124,8 @@ for c in rows:
         local i=1 line
         for line in "${lines[@]:1}"; do
             local host rule chain u d
-            line="${line#ROW }"     # strip python row marker
-            IFS='|' read -r host rule chain u d <<< "$line"
+            line="${line#ROW	}"     # strip python row marker
+            IFS=$'\t' read -r host rule chain u d <<< "$line"
             printf '%-3d %-28s %-12s %-26s %10s %10s\n' "$i" "${host:0:28}" "${rule:0:12}" "${chain:0:26}" "$(_fmt_bytes "$d")" "$(_fmt_bytes "$u")"
             ((i++))
         done

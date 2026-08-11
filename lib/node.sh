@@ -41,11 +41,13 @@ node_list() {
 node_test() {
     json_guard
     ctrl_require
-    local g url timeout
+    local g url timeout encoded_url
     g=${1:-$(node_group)}
     [[ -n "$g" ]] || die "未找到节点组"
     url=$(conf_get test_url); url=${url:-https://www.google.com}
     timeout=$(conf_get test_timeout); timeout=${timeout:-5000}
+    [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || die "test_timeout 必须是正整数毫秒"
+    encoded_url=$(jq_uri "$url")
     info "测延迟 (group=$g, url=$url, timeout=${timeout}ms) ..."
 
     # collect node names, then test in batches of 20 concurrent requests
@@ -56,11 +58,11 @@ node_test() {
 
     local BATCH=20 idx=0
     while (( idx < ${#nodes[@]} )); do
-        local tmp; tmp=$(mktemp -d)
+        local tmp; tmp=$(mktemp -d) || die "无法创建延迟测试临时目录"
         local pids=() j=0 nn
         for nn in "${nodes[@]:idx:BATCH}"; do
             ( local ms
-              ms=$(ctrl_get "/proxies/$(jq_uri "$nn")/delay?url=${url}&timeout=${timeout}" 2>/dev/null \
+              ms=$(ctrl_get "/proxies/$(jq_uri "$nn")/delay?url=${encoded_url}&timeout=${timeout}" 2>/dev/null \
                    | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('delay',''))" 2>/dev/null)
               printf '%s\t%s\n' "${ms:-FAIL}" "$nn" > "$tmp/$j"
             ) &
@@ -85,8 +87,9 @@ node_test() {
     (( ${#results[@]} > 0 )) || { warn "无可用节点"; return 1; }
 
     # print sorted ascending, numbered
-    local sorted sorted_lines i
-    mapfile -t sorted_lines < <(printf '%s\n' "${results[@]}" | sort -n)
+    local sorted sorted_lines=() line i
+    while IFS= read -r line; do sorted_lines+=("$line"); done \
+        < <(printf '%s\n' "${results[@]}" | sort -n)
     i=1
     for line in "${sorted_lines[@]}"; do
         local raw_ms node_name
@@ -136,7 +139,8 @@ _pick_from() {
 # interactive pick from a group's members; prints chosen name to stdout
 _pick_interactive() {
     local g=$1
-    mapfile -t m < <(_node_members "$g")
+    local m=() member
+    while IFS= read -r member; do m+=("$member"); done < <(_node_members "$g")
     (( ${#m[@]} > 0 )) || return 1
     if has fzf; then
         printf '%s\n' "${m[@]}" | fzf --prompt="节点($g)> " --height=40% --reverse --info=inline 2>/dev/null
@@ -157,12 +161,14 @@ node_use() {
         name=$(_pick_interactive "$g") || { info "取消"; return 0; }
     elif [[ "$name" =~ ^[0-9]+$ ]]; then
         # numeric -> by 1-based index in node-list order
-        mapfile -t m < <(_node_members "$g")
+        local m=() member
+        while IFS= read -r member; do m+=("$member"); done < <(_node_members "$g")
         (( name >= 1 && name <= ${#m[@]} )) || die "序号超出范围 (1-${#m[@]}); 运行 proxy node list"
         name="${m[$((name-1))]}"
     else
         # substring match (case-insensitive, fixed string)
-        mapfile -t hits < <(_node_members "$g" | grep -iF -- "$name")
+        local hits=() hit
+        while IFS= read -r hit; do hits+=("$hit"); done < <(_node_members "$g" | grep -iF -- "$name")
         case ${#hits[@]} in
             0) die "无节点匹配 '$name' (运行 proxy node list 看可选名)";;
             1) name="${hits[0]}";;
@@ -172,7 +178,9 @@ node_use() {
         esac
     fi
 
-    local code; code=$(ctrl_put "/proxies/$(jq_uri "$g")" "{\"name\":\"$name\"}")
+    local code body
+    body="{\"name\":$(_json_quote "$name")}"
+    code=$(ctrl_put "/proxies/$(jq_uri "$g")" "$body")
     case "$code" in
         204|200) ok "已切换: $name (组 $g)" ;;
         *) die "切换失败 (HTTP $code)。节点名是否正确？运行 proxy node list" ;;

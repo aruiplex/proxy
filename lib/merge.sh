@@ -41,12 +41,38 @@ merge_list() {
     _merge_rules | sed 's/^/  - /'
 }
 
+_merge_selector_group() {
+    python3 - "$CONFIG" <<'PY' 2>/dev/null
+import re, sys
+text = open(sys.argv[1], encoding='utf-8').read().splitlines()
+inside = False
+for i, line in enumerate(text):
+    if re.match(r'^proxy-groups:\s*$', line):
+        inside = True
+        continue
+    if inside and re.match(r'^[A-Za-z0-9_-]+\s*:', line):
+        break
+    if inside:
+        m = re.match(r'^\s*-\s+name:\s*(.+?)\s*$', line)
+        if m:
+            name = m.group(1).strip("'\"")
+            chunk = '\n'.join(text[i:i+8])
+            if re.search(r'(?m)^\s+type:\s*select\s*$', chunk):
+                print(name)
+                break
+PY
+}
+
 merge_add() {
     local rule=$1 target=$2
     if [[ -n "$target" ]]; then
         case "$(printf '%s' "$rule" | tr '[:upper:]' '[:lower:]')" in
             direct|d) rule="DOMAIN-SUFFIX,$target,DIRECT" ;;
-            proxy|p)  rule="DOMAIN-SUFFIX,$target,PROXIES" ;;
+            proxy|p)
+                local group; group=$(_merge_selector_group)
+                [[ -n "$group" ]] || die "配置中未找到 select 节点组，无法生成 proxy 规则"
+                rule="DOMAIN-SUFFIX,$target,$group"
+                ;;
             reject|r) rule="DOMAIN-SUFFIX,$target,REJECT" ;;
             *) die "快捷语法形式: proxy merge add direct|proxy|reject <domain>" ;;
         esac
@@ -59,19 +85,44 @@ merge_add() {
     fi
     # ensure the header exists
     grep -q '^prepend-rules:' "$MERGE_FILE" || printf 'prepend-rules:\n' >> "$MERGE_FILE"
-    printf '  - %s\n' "$rule" >> "$MERGE_FILE"
+    local edit_bak config_bak
+    edit_bak=$(mktemp "$CONF_DIR/.merge.edit.XXXXXX") || die "无法创建 merge 临时备份"
+    config_bak=$(mktemp "$CONF_DIR/.merge.config.XXXXXX") || { rm -f "$edit_bak"; die "无法创建配置临时备份"; }
+    cp -f "$MERGE_FILE" "$edit_bak" || { rm -f "$edit_bak" "$config_bak"; die "无法备份 merge.yaml"; }
+    cp -f "$CONFIG" "$config_bak" || { rm -f "$edit_bak" "$config_bak"; die "无法备份 config.yaml"; }
+    printf '  - %s\n' "$rule" >> "$MERGE_FILE" || { rm -f "$edit_bak"; die "无法写入 merge.yaml"; }
     ok "已添加: $rule"
-    merge_apply
+    if ! ( merge_apply ); then
+        mv -f "$edit_bak" "$MERGE_FILE"
+        mv -f "$config_bak" "$CONFIG"
+        ( source "$SCRIPT_DIR/lib/service.sh"; svc_apply ) >/dev/null 2>&1 || true
+        warn "规则应用失败，merge.yaml 已回滚"
+        return 1
+    fi
+    rm -f "$edit_bak" "$config_bak"
 }
 
 merge_rm() {
     local pat=$1
     [[ -n "$pat" ]] || die "用法: proxy merge rm '<子串>'  (按子串匹配整行删除)"
     [[ -f "$MERGE_FILE" ]] || die "无 $MERGE_FILE"
-    grep -vF -- "$pat" "$MERGE_FILE" > "$MERGE_FILE.tmp" || true
-    mv -f "$MERGE_FILE.tmp" "$MERGE_FILE"
+    local edit_bak config_bak tmp
+    edit_bak=$(mktemp "$CONF_DIR/.merge.edit.XXXXXX") || die "无法创建 merge 临时备份"
+    config_bak=$(mktemp "$CONF_DIR/.merge.config.XXXXXX") || { rm -f "$edit_bak"; die "无法创建配置临时备份"; }
+    tmp=$(mktemp "$CONF_DIR/.merge.remove.XXXXXX") || { rm -f "$edit_bak" "$config_bak"; die "无法创建 merge 临时文件"; }
+    cp -f "$MERGE_FILE" "$edit_bak" || { rm -f "$edit_bak" "$config_bak" "$tmp"; die "无法备份 merge.yaml"; }
+    cp -f "$CONFIG" "$config_bak" || { rm -f "$edit_bak" "$config_bak" "$tmp"; die "无法备份 config.yaml"; }
+    grep -vF -- "$pat" "$MERGE_FILE" > "$tmp" || true
+    mv -f "$tmp" "$MERGE_FILE"
     ok "已移除匹配 '$pat' 的行"
-    merge_apply
+    if ! ( merge_apply ); then
+        mv -f "$edit_bak" "$MERGE_FILE"
+        mv -f "$config_bak" "$CONFIG"
+        ( source "$SCRIPT_DIR/lib/service.sh"; svc_apply ) >/dev/null 2>&1 || true
+        warn "规则移除失败，merge.yaml 已回滚"
+        return 1
+    fi
+    rm -f "$edit_bak" "$config_bak"
 }
 
 merge_diff() {
@@ -97,8 +148,8 @@ merge_apply() {
     [[ -f "$CONFIG" ]]    || die "无 $CONFIG (先: proxy init)"
 
     local RULES=()
-    mapfile -t RULES < <(_merge_rules)
-    (( ${#RULES[@]} > 0 )) || die "merge.yaml 未解析到 prepend-rules 条目"
+    local rule
+    while IFS= read -r rule; do RULES+=("$rule"); done < <(_merge_rules)
 
     # 1) detect original rules-list indent
     local INDENT SPACES
@@ -114,9 +165,12 @@ merge_apply() {
 
     # 2) build the block (same indent as the original list; no leading blank line)
     local BLOCK r
-    BLOCK="${SPACES}${MERGE_MARK_BEGIN}"$'\n'
-    for r in "${RULES[@]}"; do BLOCK+="${SPACES}- $r"$'\n'; done
-    BLOCK+="${SPACES}${MERGE_MARK_END}"$'\n'
+    BLOCK=
+    if (( ${#RULES[@]} > 0 )); then
+        BLOCK="${SPACES}${MERGE_MARK_BEGIN}"$'\n'
+        for r in "${RULES[@]}"; do BLOCK+="${SPACES}- $r"$'\n'; done
+        BLOCK+="${SPACES}${MERGE_MARK_END}"$'\n'
+    fi
 
     # 3) strip any old block, insert new one right after `rules:`
     local tmp="$CONFIG.merge-tmp"
@@ -129,6 +183,12 @@ merge_apply() {
         { print }
     ' "$CONFIG" > "$tmp"
 
+    if (( ${#RULES[@]} > 0 )) && ! grep -qF "$MERGE_MARK_BEGIN" "$tmp"; then
+        rm -f "$tmp"
+        warn "配置中没有可注入的块式 rules: 段"
+        return 1
+    fi
+
     # 4) validate before replacing; never touch the running core on failure
     if ! mihomo_test "$tmp"; then
         warn "合并后配置校验失败，未替换 config.yaml，mihomo 未受影响:"
@@ -137,10 +197,14 @@ merge_apply() {
         rm -f "$tmp"; return 1
     fi
 
-    cp -f "$CONFIG" "$BAK"; mv -f "$tmp" "$CONFIG"
+    if [[ "${PRESERVE_BAK:-0}" != 1 ]] && ! cp -f "$CONFIG" "$BAK"; then
+        rm -f "$tmp"; warn "无法备份 config.yaml"; return 1
+    fi
+    mv -f "$tmp" "$CONFIG" || { rm -f "$tmp"; warn "无法替换 config.yaml"; return 1; }
     info "已注入 ${#RULES[@]} 条规则 (缩进=${INDENT} 空格) 到 rules: 顶部; 备份 → $BAK"
 
-    # 5) apply the on-disk config: hot-reload, or restart if controller is down
+    # 5) apply the on-disk config unless a caller is composing one transaction
+    [[ "${DEFER_APPLY:-0}" == 1 ]] && return 0
     # shellcheck source=service.sh
     source "$SCRIPT_DIR/lib/service.sh"
     svc_apply

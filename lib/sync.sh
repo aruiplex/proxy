@@ -59,21 +59,24 @@ sync_cmd() {
 
 # build a bundle dir with merge.yaml/regions.conf/subs.conf/proxy.portable
 _sync_build() { # <dest-dir>
-    local tmp=$1
+    local tmp=$1 have=0
     for f in merge.yaml regions.conf subs.conf; do
-        [[ -f "$CONF_DIR/$f" ]] && cp -f "$CONF_DIR/$f" "$tmp/$f"
+        if [[ -f "$CONF_DIR/$f" ]]; then
+            cp -f "$CONF_DIR/$f" "$tmp/$f" || return 1
+            have=1
+        fi
     done
     _sync_portable "$PROXY_CONF" "$SYNC_CONF_KEYS" > "$tmp/proxy.portable"
-    if ! ls "$tmp"/merge.yaml "$tmp"/regions.conf "$tmp"/subs.conf "$tmp"/proxy.portable >/dev/null 2>&1 \
-       && [[ ! -s "$tmp/proxy.portable" ]]; then
+    [[ -s "$tmp/proxy.portable" ]] && have=1
+    if (( ! have )); then
         warn "本机无可同步配置 (无 merge/region/订阅)"
         return 1
     fi
 }
 
-sync_export() { # [path] — bundle to file, or stdout
-    local tmp; tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' RETURN
+sync_export() { ( # [path] — bundle to file, or stdout
+    local tmp; tmp=$(mktemp -d) || die "无法创建同步临时目录"
+    trap 'rm -rf "$tmp"' EXIT
     _sync_build "$tmp" || return 1
     if [[ -n "${1:-}" ]]; then
         tar czf "$1" -C "$tmp" . || die "写入失败: $1"
@@ -83,21 +86,27 @@ sync_export() { # [path] — bundle to file, or stdout
     else
         tar czf - -C "$tmp" . || die "导出失败"
     fi
-}
+); }
 
-sync_import() { # [path] — file / dir / stdin
-    local src=${1:-} tmp
+sync_import() { ( # [path] — file / dir / stdin
+    local src=${1:-} tmp cleanup=0
     if [[ -n "$src" && -d "$src" ]]; then
         tmp=$src
     elif [[ -n "$src" && -f "$src" ]]; then
-        tmp=$(mktemp -d)
+        tmp=$(mktemp -d) || die "无法创建同步临时目录"; cleanup=1
         tar xzf "$src" -C "$tmp" 2>/dev/null || die "无法解压: $src"
     else
-        tmp=$(mktemp -d)
+        tmp=$(mktemp -d) || die "无法创建同步临时目录"; cleanup=1
         tar xzf - -C "$tmp" 2>/dev/null || die "stdin 内容不是有效打包"
     fi
+    trap '[[ "$cleanup" == 1 ]] && rm -rf "$tmp"' EXIT
     mkdir -p "$CONF_DIR"
-    [[ -f "$tmp/proxy.portable" && -s "$tmp/proxy.portable" ]] || die "打包内容无效 (缺 proxy.portable)"
+    local have=0 f
+    for f in merge.yaml regions.conf subs.conf proxy.portable; do
+        [[ -f "$tmp/$f" ]] && have=1
+    done
+    (( have )) || die "打包内容无效 (无可同步文件)"
+    [[ -f "$tmp/proxy.portable" ]] || : > "$tmp/proxy.portable"
 
     # backup what we are about to replace
     local bak="$CONF_DIR/.sync-bak"; mkdir -p "$bak"
@@ -116,12 +125,17 @@ sync_import() { # [path] — file / dir / stdin
 
     # re-apply merge/region so prepend rules survive; sub refresh stays manual
     # (a brand-new machine may not have working network yet)
+    if [[ "$(conf_get pool)" == on ]]; then
+        say "节点池模式已导入 → 运行: proxy pool refresh"
+        return 0
+    fi
+    local replay_failed=0
     if [[ -f "$CONF_DIR/merge.yaml" ]]; then
         # shellcheck source=merge.sh
         source "$SCRIPT_DIR/lib/merge.sh"
         if _merge_rules >/dev/null 2>&1; then
             info "重新应用 merge 规则 ..."
-            merge_apply || warn "merge 应用失败 (稍后: proxy merge apply)"
+            ( merge_apply ) || { warn "merge 应用失败 (稍后: proxy merge apply)"; replay_failed=1; }
         fi
     fi
     if [[ -f "$CONF_DIR/regions.conf" ]]; then
@@ -129,7 +143,7 @@ sync_import() { # [path] — file / dir / stdin
         source "$SCRIPT_DIR/lib/region.sh"
         if [[ -n "$(_region_names)" ]]; then
             info "重新应用 region 组 ..."
-            region_apply || warn "region 组应用失败 (稍后: proxy region apply)"
+            ( region_apply ) || { warn "region 组应用失败 (稍后: proxy region apply)"; replay_failed=1; }
         fi
     fi
     local sub; sub=$(conf_get active_sub)
@@ -138,14 +152,15 @@ sync_import() { # [path] — file / dir / stdin
     else
         say "未设活跃订阅 → 先: proxy sub add <name> <url>"
     fi
-}
+    (( replay_failed == 0 ))
+); }
 
-sync_push() { # <user@host>
+sync_push() { ( # <user@host>
     local host=$1
     [[ -n "$host" ]] || die "用法: proxy sync push <user@host>"
     has ssh || die "缺少依赖: ssh"
-    local tmp; tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' RETURN
+    local tmp; tmp=$(mktemp -d) || die "无法创建同步临时目录"
+    trap 'rm -rf "$tmp"' EXIT
     _sync_build "$tmp" || return 1
     info "推送配置到 $host ..."
     # transfer + merge entirely with remote-side bash/grep/awk (no proxy CLI needed)
@@ -153,42 +168,48 @@ sync_push() { # <user@host>
         set -e
         mkdir -p ~/.config/mihomo
         cd ~/.config/mihomo
-        mkdir -p .sync-incoming
-        tar xzf - -C .sync-incoming
+        incoming=$(mktemp -d .sync-incoming.XXXXXX)
+        trap '\''rm -rf "$incoming"'\'' EXIT HUP INT TERM
+        tar xzf - -C "$incoming"
         for f in merge.yaml regions.conf subs.conf; do
-            if [ -f ".sync-incoming/$f" ]; then
-                cp -f ".sync-incoming/$f" "$f"
+            if [ -f "$incoming/$f" ]; then
+                cp -f "$incoming/$f" "$f"
                 chmod 600 "$f" 2>/dev/null || true
             fi
         done
-        if [ -s .sync-incoming/proxy.portable ]; then
-            keys="active_sub sub_ua sub_url region_interval region_url region_exclude test_timeout test_url lan pool"
-            { grep -vE "^(${keys// /|})=" proxy.conf 2>/dev/null || true; cat .sync-incoming/proxy.portable; } > proxy.conf.new
+        if [ -s "$incoming/proxy.portable" ]; then
+            keys_re="active_sub|sub_ua|sub_url|region_interval|region_url|region_exclude|test_timeout|test_url|lan|pool"
+            { grep -vE "^(${keys_re})=" proxy.conf 2>/dev/null || true; cat "$incoming/proxy.portable"; } > proxy.conf.new
             mv -f proxy.conf.new proxy.conf
             chmod 600 proxy.conf
         fi
-        rm -rf .sync-incoming
         echo "remote sync OK ($(hostname))"
     ' || die "ssh 推送失败"
     ok "已推送"
     sync_summary
-}
+); }
 
-sync_pull() { # <user@host>
+sync_pull() { ( # <user@host>
     local host=$1
     [[ -n "$host" ]] || die "用法: proxy sync pull <user@host>"
     has ssh || die "缺少依赖: ssh"
-    local tmp; tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' RETURN
+    local tmp; tmp=$(mktemp -d) || die "无法创建同步临时目录"
+    trap 'rm -rf "$tmp"' EXIT
     info "从 $host 拉取配置 ..."
     ssh -o ConnectTimeout=10 "$host" \
-        'cd ~/.config/mihomo 2>/dev/null && tar czf - merge.yaml regions.conf subs.conf proxy.conf 2>/dev/null' \
+        'cd ~/.config/mihomo 2>/dev/null || exit 1
+         files=
+         for f in merge.yaml regions.conf subs.conf proxy.conf; do [ -f "$f" ] && files="$files $f"; done
+         [ -n "$files" ] && tar czf - $files 2>/dev/null' \
         | tar xzf - -C "$tmp" 2>/dev/null || die "ssh 拉取失败"
-    [[ -f "$tmp/proxy.conf" ]] || die "远端无 ~/.config/mihomo/proxy.conf"
-    _sync_portable "$tmp/proxy.conf" "$SYNC_CONF_KEYS" > "$tmp/proxy.portable"
-    rm -f "$tmp/proxy.conf"
+    if [[ -f "$tmp/proxy.conf" ]]; then
+        _sync_portable "$tmp/proxy.conf" "$SYNC_CONF_KEYS" > "$tmp/proxy.portable"
+        rm -f "$tmp/proxy.conf"
+    else
+        : > "$tmp/proxy.portable"
+    fi
     sync_import "$tmp"
-}
+); }
 
 sync_summary() {
     say "内容: $(ls "$CONF_DIR/merge.yaml" >/dev/null 2>&1 && echo merge ✓ || echo 'merge -')  \

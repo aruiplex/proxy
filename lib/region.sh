@@ -82,17 +82,18 @@ _region_block() {
     (( ${#members[@]} > 0 )) || return 1
     esc=${U//\'/\'\'}
     printf '%s%s\n' "$G" "$REGION_MARK_BEGIN"
-    printf '%s- name: %s\n%s  type: fallback\n%s  proxies:\n' "$G" "$REGION_MASTER" "$G" "$G"
+    printf "%s- name: '%s'\n%s  type: fallback\n%s  proxies:\n" "$G" "$REGION_MASTER" "$G" "$G"
     local m
-    for m in "${members[@]}"; do printf '%s- %s\n' "$F" "$m"; done
+    for m in "${members[@]}"; do esc=${m//\'/\'\'}; printf "%s- '%s'\n" "$F" "$esc"; done
     printf '%s  url: %s\n%s  interval: %s\n' "$G" "$U" "$G" "$I"
     # per-region: include-all + filter, so renamed/re-added nodes just work
     while IFS= read -r name; do
         gname=$(_region_group "$name")
         regex=$(_region_regex "$name")
         [[ -n "$regex" ]] || { warn "region '$name' 无 regex, 跳过"; continue; }
+        local name_esc; name_esc=${gname//\'/\'\'}
         esc=${regex//\'/\'\'}
-        printf '%s- name: %s\n%s  type: fallback\n%s  include-all: true\n' "$G" "$gname" "$G" "$G"
+        printf "%s- name: '%s'\n%s  type: fallback\n%s  include-all: true\n" "$G" "$name_esc" "$G" "$G"
         printf "%s  filter: '%s'\n" "$G" "$esc"
         if [[ -n "$X" ]]; then
             esc=${X//\'/\'\'}
@@ -134,7 +135,9 @@ region_apply() {
     local BLOCK SEL
     BLOCK=$(_region_block "$G") || BLOCK=""   # no regions defined -> strip our groups (cleanup)
     SEL=$(_region_select_group)
-    [[ -n "$SEL" ]] || warn "未在 config 中找到 select 组, 只注入地区组, 不改动现有组成员"
+    if [[ -n "$BLOCK" && -z "$SEL" ]]; then
+        die "未找到块式 select 组（flow-style proxy-groups 暂不支持），配置未改动"
+    fi
 
     # group names we manage (to strip stale refs before re-injecting); the
     # surgery additionally strips refs to any group found in the OLD block,
@@ -217,16 +220,20 @@ PY
         [[ -n "$bin" ]] && "$bin" -t -d "$CONF_DIR" -f "$tmp" 2>&1 | tail -4 >&2
         rm -f "$tmp"; return 1
     fi
-    cp -f "$CONFIG" "$BAK"; mv -f "$tmp" "$CONFIG"
+    if [[ "${PRESERVE_BAK:-0}" != 1 ]] && ! cp -f "$CONFIG" "$BAK"; then
+        rm -f "$tmp"; warn "无法备份 config.yaml"; return 1
+    fi
+    mv -f "$tmp" "$CONFIG" || { rm -f "$tmp"; warn "无法替换 config.yaml"; return 1; }
     if [[ -n "$BLOCK" ]]; then
         ok "已注入 region 组 (间隔 $(_region_interval)s$([[ -n "$(_region_exclude)" ]] && printf ', 排除: %s' "$(_region_exclude)")); 备份 → $BAK"
     else
         ok "已无地区定义, 已从配置移除 region 组; 备份 → $BAK"
     fi
 
+    [[ "${DEFER_APPLY:-0}" == 1 ]] && return 0
     # shellcheck source=service.sh
     source "$SCRIPT_DIR/lib/service.sh"
-    svc_apply
+    svc_apply || return 1
 
     # if the select group currently points at a node we just removed, re-pin
     # it to the master group so traffic isn't left on a stale choice
@@ -291,7 +298,7 @@ _region_preset_regex() {
 }
 
 region_add() {
-    local name=$1 regex=$2
+    local name=$1 regex=$2 edit_bak config_bak
     [[ -n "$name" ]] || die "用法: proxy region add <name> ['<regex>']  (内置快捷别名: HK, SG, US, JP, TW, KR, UK)"
     if [[ -z "$regex" ]]; then
         regex=$(_region_preset_regex "$name") || die "未知地区简写 '$name'; 请提供正则表达式或使用内置别名: HK, SG, US, JP, TW, KR, UK"
@@ -301,26 +308,48 @@ region_add() {
     printf '%s' "$regex" | python3 -c "import sys,re; re.compile(sys.stdin.read())" 2>/dev/null \
         || die "regex 无法编译: $regex"
     _region_ensure
+    edit_bak=$(mktemp "$CONF_DIR/.regions.edit.XXXXXX") || die "无法创建 regions 临时备份"
+    config_bak=$(mktemp "$CONF_DIR/.regions.config.XXXXXX") || { rm -f "$edit_bak"; die "无法创建配置临时备份"; }
+    cp -f "$REGIONS_FILE" "$edit_bak" || { rm -f "$edit_bak" "$config_bak"; die "无法备份 regions.conf"; }
+    cp -f "$CONFIG" "$config_bak" || { rm -f "$edit_bak" "$config_bak"; die "无法备份 config.yaml"; }
     awk -F'\t' -v n="$name" '$1!=n' "$REGIONS_FILE" > "$REGIONS_FILE.tmp"
     printf '%s\t%s\n' "$name" "$regex" >> "$REGIONS_FILE.tmp"
     mv -f "$REGIONS_FILE.tmp" "$REGIONS_FILE"
     ok "地区 '$name' 已保存 → $(_region_group "$name")"
-    _region_dispatch
+    if ! ( _region_dispatch ); then
+        mv -f "$edit_bak" "$REGIONS_FILE"
+        mv -f "$config_bak" "$CONFIG"
+        ( source "$SCRIPT_DIR/lib/service.sh"; svc_apply ) >/dev/null 2>&1 || true
+        warn "地区定义应用失败，regions.conf 已回滚"
+        return 1
+    fi
+    rm -f "$edit_bak" "$config_bak"
 }
 
 region_rm() {
-    local name=$1
+    local name=$1 edit_bak config_bak
     [[ -n "$name" ]] || die "用法: proxy region rm <name>"
     [[ -f "$REGIONS_FILE" ]] || die "无 $REGIONS_FILE"
-    grep -q "^${name}	" "$REGIONS_FILE" || die "无此地区: $name"
+    awk -F'\t' -v n="$name" '$1==n {found=1} END{exit !found}' "$REGIONS_FILE" || die "无此地区: $name"
+    edit_bak=$(mktemp "$CONF_DIR/.regions.edit.XXXXXX") || die "无法创建 regions 临时备份"
+    config_bak=$(mktemp "$CONF_DIR/.regions.config.XXXXXX") || { rm -f "$edit_bak"; die "无法创建配置临时备份"; }
+    cp -f "$REGIONS_FILE" "$edit_bak" || { rm -f "$edit_bak" "$config_bak"; die "无法备份 regions.conf"; }
+    cp -f "$CONFIG" "$config_bak" || { rm -f "$edit_bak" "$config_bak"; die "无法备份 config.yaml"; }
     awk -F'\t' -v n="$name" '$1!=n' "$REGIONS_FILE" > "$REGIONS_FILE.tmp"
     mv -f "$REGIONS_FILE.tmp" "$REGIONS_FILE"
     ok "地区 '$name' 已移除"
-    _region_dispatch
+    if ! ( _region_dispatch ); then
+        mv -f "$edit_bak" "$REGIONS_FILE"
+        mv -f "$config_bak" "$CONFIG"
+        ( source "$SCRIPT_DIR/lib/service.sh"; svc_apply ) >/dev/null 2>&1 || true
+        warn "地区移除失败，regions.conf 已回滚"
+        return 1
+    fi
+    rm -f "$edit_bak" "$config_bak"
 }
 
 region_set() {
-    local k=$1 v=${2-}
+    local k=$1 v=${2-} old config_bak
     [[ -n "$k" ]] || die "用法: proxy region set interval|url|exclude <value>  (exclude 支持快捷预设: default | hk | clear)"
     case "$k" in
         interval) [[ "$v" =~ ^[0-9]+$ ]] && (( v >= 10 )) || die "interval 需为 >=10 的秒数" ;;
@@ -341,13 +370,29 @@ region_set() {
                           || die "regex 无法编译: $v" ;;
         *) die "未知设置项: $k (可选: interval|url|exclude)" ;;
     esac
+    old=$(conf_get "region_$k")
+    config_bak=$(mktemp "$CONF_DIR/.regions.config.XXXXXX") || die "无法创建配置临时备份"
+    cp -f "$CONFIG" "$config_bak" || { rm -f "$config_bak"; die "无法备份 config.yaml"; }
     conf_set "region_$k" "$v"
     ok "region_$k = ${v:-(空, 不屏蔽)}"
-    _region_dispatch
+    if ! ( _region_dispatch ); then
+        conf_set "region_$k" "$old"
+        mv -f "$config_bak" "$CONFIG"
+        ( source "$SCRIPT_DIR/lib/service.sh"; svc_apply ) >/dev/null 2>&1 || true
+        warn "设置应用失败，region_$k 已回滚"
+        return 1
+    fi
+    rm -f "$config_bak"
 }
 
 region_preset() {
     _region_ensure
+    local edit_bak config_bak old_exclude
+    edit_bak=$(mktemp "$CONF_DIR/.regions.edit.XXXXXX") || die "无法创建 regions 临时备份"
+    config_bak=$(mktemp "$CONF_DIR/.regions.config.XXXXXX") || { rm -f "$edit_bak"; die "无法创建配置临时备份"; }
+    cp -f "$REGIONS_FILE" "$edit_bak" || { rm -f "$edit_bak" "$config_bak"; die "无法备份 regions.conf"; }
+    cp -f "$CONFIG" "$config_bak" || { rm -f "$edit_bak" "$config_bak"; die "无法备份 config.yaml"; }
+    old_exclude=$(conf_get region_exclude)
     say "${C_B}一键加载常用地区 (HK, SG, JP, US) 与默认排除规则...${C_N}"
     awk -F'\t' 'NF && $1 !~ /^#/ {print $1}' "$REGIONS_FILE" > "$REGIONS_FILE.bak" 2>/dev/null || true
     local name
@@ -359,7 +404,15 @@ region_preset() {
     done
     conf_set "region_exclude" '(?i)(hong[ -]?kong|🇭🇰|\bhk\b|剩余|重置|套餐|到期|流量|官网|中转|倍率)'
     ok "一键预设应用完成 (包含 HK, SG, JP, US 分组与默认排除规则)"
-    _region_dispatch
+    if ! ( _region_dispatch ); then
+        mv -f "$edit_bak" "$REGIONS_FILE"
+        mv -f "$config_bak" "$CONFIG"
+        conf_set region_exclude "$old_exclude"
+        ( source "$SCRIPT_DIR/lib/service.sh"; svc_apply ) >/dev/null 2>&1 || true
+        warn "预设应用失败，地区定义已回滚"
+        return 1
+    fi
+    rm -f "$edit_bak" "$config_bak"
 }
 
 region_cmd() {

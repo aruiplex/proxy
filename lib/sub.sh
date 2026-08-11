@@ -31,19 +31,30 @@ _sub_get_url() { # name -> url
     awk -F'\t' -v n="$1" '$1==n {print $2; exit}' "$SUBS_FILE"
 }
 _sub_set() {    # name url  — add or update
+    local tmp
     mkdir -p "$CONF_DIR"; touch "$SUBS_FILE"; chmod 600 "$SUBS_FILE"
-    awk -F'\t' -v n="$1" '$1!=n' "$SUBS_FILE" > "$SUBS_FILE.tmp"
-    printf '%s\t%s\n' "$1" "$2" >> "$SUBS_FILE.tmp"
-    mv -f "$SUBS_FILE.tmp" "$SUBS_FILE"; chmod 600 "$SUBS_FILE"
+    tmp=$(mktemp "$CONF_DIR/.subs.conf.tmp.XXXXXX") || die "无法创建订阅临时文件"
+    awk -F'\t' -v n="$1" '$1!=n' "$SUBS_FILE" > "$tmp"
+    printf '%s\t%s\n' "$1" "$2" >> "$tmp"
+    mv -f "$tmp" "$SUBS_FILE"; chmod 600 "$SUBS_FILE"
 }
 _sub_rm() {     # name
     [[ -f "$SUBS_FILE" ]] || return 0
-    awk -F'\t' -v n="$1" '$1!=n' "$SUBS_FILE" > "$SUBS_FILE.tmp"
-    mv -f "$SUBS_FILE.tmp" "$SUBS_FILE"; chmod 600 "$SUBS_FILE"
+    local tmp; tmp=$(mktemp "$CONF_DIR/.subs.conf.tmp.XXXXXX") || die "无法创建订阅临时文件"
+    awk -F'\t' -v n="$1" '$1!=n' "$SUBS_FILE" > "$tmp"
+    mv -f "$tmp" "$SUBS_FILE"; chmod 600 "$SUBS_FILE"
 }
 _sub_active_name() { local n; n=$(conf_get active_sub); printf '%s' "${n:-default}"; }
 _sub_url_for() { # name -> url (subs first, then legacy sub_url)
-    local u; u=$(_sub_get_url "$1"); [[ -n "$u" ]] || u=$(conf_get sub_url); printf '%s' "$u"
+    local u; u=$(_sub_get_url "$1")
+    [[ -n "$u" || "$1" != default ]] || u=$(conf_get sub_url)
+    printf '%s' "$u"
+}
+_sub_validate_url() {
+    local url=$1
+    [[ "$url" =~ ^https?:// ]] || die "订阅 URL 必须以 http:// 或 https:// 开头"
+    [[ "$url" != *$'\t'* && "$url" != *$'\n'* && "$url" != *$'\r'* ]] \
+        || die "订阅 URL 不能包含制表符或换行"
 }
 
 # Convert a base64 / URI-list subscription into a Clash YAML config (in place).
@@ -60,6 +71,11 @@ import sys, base64, json, re, urllib.parse
 path, ctrl = sys.argv[1], sys.argv[2]
 raw = open(path, 'rb').read()
 t = raw.decode('utf-8', 'replace').strip()
+
+def b64text(value):
+    value = urllib.parse.unquote(value).strip()
+    value += '=' * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value).decode('utf-8', 'replace')
 
 def looks_yaml(s):
     for line in s.splitlines():
@@ -80,7 +96,7 @@ if re.match(r'^[A-Za-z0-9]+://', t):
     text = t                          # plain URI list
 else:
     try:
-        dec = base64.b64decode(t).decode('utf-8', 'replace')
+        dec = b64text(t)
     except Exception:
         dec = ''
     if dec and ('://' in dec[:4000] or looks_yaml(dec)):
@@ -108,20 +124,32 @@ for line in text.splitlines():
     if not l or '://' not in l:
         continue
     scheme = l.split('://', 1)[0].lower()
-    u = urllib.parse.urlsplit(l)
+    try:
+        u = urllib.parse.urlsplit(l)
+        host, port = u.hostname, u.port
+    except (ValueError, UnicodeError):
+        continue
     name = urllib.parse.unquote(u.fragment).strip() or l.split('#', 1)[-1].strip()
     if not name or is_info(name):
         continue
     q = urllib.parse.parse_qs(u.query)
     p = None
     if scheme == 'hysteria2':
-        p = {'name': name, 'type': 'hysteria2', 'server': u.hostname,
-             'port': u.port, 'password': urllib.parse.unquote(u.username or '')}
+        p = {'name': name, 'type': 'hysteria2', 'server': host,
+             'port': port, 'password': urllib.parse.unquote(u.username or '')}
         if q.get('sni'): p['sni'] = q['sni'][0]
         if q.get('insecure', ['0'])[0] == '1': p['skip-cert-verify'] = True
     elif scheme == 'vless':
-        p = {'name': name, 'type': 'vless', 'server': u.hostname, 'port': u.port,
-             'uuid': urllib.parse.unquote(u.username or ''), 'tls': True}
+        security = q.get('security', ['none'])[0].lower()
+        p = {'name': name, 'type': 'vless', 'server': host, 'port': port,
+             'uuid': urllib.parse.unquote(u.username or '')}
+        if security in ('tls', 'reality'): p['tls'] = True
+        if q.get('flow'): p['flow'] = q['flow'][0]
+        if security == 'reality':
+            reality = {}
+            if q.get('pbk'): reality['public-key'] = q['pbk'][0]
+            if q.get('sid'): reality['short-id'] = q['sid'][0]
+            if reality: p['reality-opts'] = reality
         if q.get('sni'): p['servername'] = q['sni'][0]
         if q.get('fp'): p['client-fingerprint'] = q['fp'][0]
         net = q.get('type', ['tcp'])[0]
@@ -134,14 +162,14 @@ for line in text.splitlines():
             if host: opts['headers'] = {'Host': host}
             p['ws-opts' if net == 'ws' else 'xhttp-opts'] = opts
     elif scheme == 'trojan':
-        p = {'name': name, 'type': 'trojan', 'server': u.hostname, 'port': u.port,
+        p = {'name': name, 'type': 'trojan', 'server': host, 'port': port,
              'password': urllib.parse.unquote(u.username or '')}
         if q.get('sni'): p['sni'] = q['sni'][0]
         if q.get('fp'): p['client-fingerprint'] = q['fp'][0]
         if q.get('allowInsecure', ['0'])[0] == '1': p['skip-cert-verify'] = True
     elif scheme == 'vmess':
         try:
-            data = json.loads(base64.b64decode(u.netloc).decode())
+            data = json.loads(b64text(u.netloc))
         except Exception:
             try:
                 data = json.loads(urllib.parse.unquote(u.netloc))
@@ -168,19 +196,26 @@ for line in text.splitlines():
     elif scheme == 'ss':
         body = l[5:]
         if '#' in body: body = body.split('#', 1)[0]
+        if '?' in body: body = body.split('?', 1)[0]
         if '@' in body:
             userinfo, _, hostport = body.rpartition('@')
             host, _, port = hostport.rpartition(':')
             if ':' not in userinfo:                      # base64(method:password)
-                dec = base64.b64decode(userinfo).decode('utf-8', 'replace')
+                try:
+                    dec = b64text(userinfo)
+                except Exception:
+                    continue
             else:
                 dec = userinfo
             method, _, password = dec.partition(':')
             p = {'name': name, 'type': 'ss', 'server': host, 'port': port,
                  'cipher': method, 'password': password}
         else:                                            # legacy: whole thing base64
-            m = re.match(r'^([^:]+):([^@]+)@([^:]+):(\d+)$',
-                         base64.b64decode(body).decode('utf-8', 'replace'))
+            try:
+                decoded = b64text(body)
+            except Exception:
+                continue
+            m = re.match(r'^([^:]+):([^@]+)@([^:]+):(\d+)$', decoded)
             if m:
                 method, password, host, port = m.groups()
                 p = {'name': name, 'type': 'ss', 'server': host, 'port': port,
@@ -201,7 +236,7 @@ def q(s):
 def emit(p):
     o = ['    - name: %s' % q(p['name']), '      type: %s' % p['type'],
          '      server: %s' % q(p['server']), '      port: %d' % p['port']]
-    for k in ('password', 'uuid', 'cipher', 'sni', 'servername',
+    for k in ('password', 'uuid', 'cipher', 'sni', 'servername', 'flow',
               'client-fingerprint', 'alterId'):
         if k in p:
             o.append('      %s: %s' % (k, q(p[k])))
@@ -209,7 +244,7 @@ def emit(p):
     if p.get('tls'): o.append('      tls: true')
     if p.get('network'):
         o.append('      network: %s' % p['network'])
-        for optk in ('ws-opts', 'xhttp-opts', 'grpc-opts'):
+        for optk in ('ws-opts', 'xhttp-opts', 'grpc-opts', 'reality-opts'):
             if optk in p:
                 o.append('      %s:' % optk)
                 for kk, vv in p[optk].items():
@@ -274,10 +309,10 @@ PY
 #   2. normalize external-controller to the CLI's configured address, so the tool
 #      always finds the API no matter what port the airport ships.
 _sub_sanitize() { # <file> [controller] [lan]
-    has python3 || return 0
-    python3 - "$1" "${2:-$(controller_addr)}" "${3:-$(conf_get lan)}" <<'PY'
+    has python3 || die "订阅清理需要 python3"
+    python3 - "$1" "${2:-$(controller_addr)}" "${3:-$(conf_get lan)}" "$CONFIG" <<'PY'
 import sys, re
-path, ctrl, lan = sys.argv[1], sys.argv[2], sys.argv[3]
+path, ctrl, lan, local_path = sys.argv[1:5]
 lines = open(path, encoding='utf-8').read().splitlines(keepends=True)
 
 pat = re.compile(r'剩余流量|套餐|到期|重置|官网|客服|邮箱|支持AI')
@@ -334,20 +369,58 @@ for i, ln in enumerate(lines):
     out.append(ln)
 
 t = ''.join(out)
-t = re.sub(r'(?m)^external-controller:\s*.*$', 'external-controller: %s' % ctrl, t)
 
-# persist the `proxy lan` choice across subscription refreshes
+# Persist machine-local controller/UI/LAN settings across subscription refreshes.
 def set_kv(name, val):
     global t
-    if re.search(r'(?m)^%s:' % name, t):
+    if val is None:
+        t = re.sub(r'(?m)^%s:.*\n?' % re.escape(name), '', t)
+    elif re.search(r'(?m)^%s:' % re.escape(name), t):
         t = re.sub(r'(?m)^%s:.*$' % name, '%s: %s' % (name, val), t)
     else:
         t = t.rstrip('\n') + '\n%s: %s\n' % (name, val)
+
+local = open(local_path, encoding='utf-8').read() if local_path and __import__('os').path.exists(local_path) else ''
+def scalar(text, name):
+    m = re.search(r'(?m)^%s:\s*(.*?)\s*$' % re.escape(name), text)
+    return m.group(1) if m else None
+
+set_kv('external-controller', scalar(local, 'external-controller') or ctrl)
+set_kv('secret', scalar(local, 'secret'))
+set_kv('external-ui', scalar(local, 'external-ui'))
+
 if lan == 'on':
     set_kv('allow-lan', 'true')
     set_kv('bind-address', "'*'")
 elif lan == 'off':
     set_kv('allow-lan', 'false')
+    set_kv('bind-address', "'127.0.0.1'")
+
+# Replace the downloaded tun mapping with the machine-local mapping. If the
+# local config has no tun block, remove a subscription-provided one so a remote
+# provider cannot silently enable privileged mode.
+def split_mapping(text, name):
+    ls = text.splitlines(keepends=True)
+    start = end = None
+    for i, line in enumerate(ls):
+        if re.match(r'^%s:(?:\s|$)' % re.escape(name), line):
+            start = i
+            end = i + 1
+            while end < len(ls):
+                cur = ls[end]
+                if cur.strip() and not cur[0].isspace():
+                    break
+                end += 1
+            break
+    block = ''.join(ls[start:end]) if start is not None else None
+    if start is not None:
+        del ls[start:end]
+    return ''.join(ls), block
+
+t, _ = split_mapping(t, 'tun')
+_, local_tun = split_mapping(local, 'tun')
+if local_tun:
+    t = t.rstrip('\n') + '\n' + local_tun
 
 open(path, 'w').write(t)
 PY
@@ -385,6 +458,7 @@ sub_add() {
     local name=$1 url=$2
     [[ -n "$name" && -n "$url" ]] || die "用法: proxy sub add <name> <url>  (name: 字母数字_-)"
     [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || die "订阅名只能含字母数字_-"
+    _sub_validate_url "$url"
     _sub_set "$name" "$url"
     ok "订阅 '$name' 已保存 ($(printf '%s' "$url" | awk -F/ '{print $3}'))"
     [[ -z "$(conf_get active_sub)" ]] && { conf_set active_sub "$name"; info "已设为活跃订阅"; }
@@ -432,26 +506,30 @@ sub_use() {
     # allow: proxy sub use <name> --no-refresh
     [[ "${2:-}" == "--no-refresh" ]] && norefresh=1
     [[ -n "$(_sub_get_url "$name")" ]] || die "无此订阅: $name (先 proxy sub add)"
-    conf_set active_sub "$name"
-    ok "活跃订阅: $name"
     if (( norefresh )); then
+        conf_set active_sub "$name"
+        ok "活跃订阅: $name"
         info "未刷新 (--no-refresh); 应用它: proxy sub refresh"
     else
         info "切换并拉取应用 ..."
-        sub_refresh "$name"
+        sub_refresh "$name" || return 1
+        conf_set active_sub "$name"
+        ok "活跃订阅: $name"
     fi
 }
 
 sub_set() {   # legacy one-shot
     local url=$1
     [[ -n "$url" ]] || die "用法: proxy sub set <url>  (或用 proxy sub add <name> <url>)"
+    _sub_validate_url "$url"
     _sub_set default "$url"
+    ok "订阅 'default' 已保存, 正在拉取 ..."
+    sub_refresh default || return 1
     conf_set active_sub default
-    ok "订阅 'default' 已保存并设为活跃, 正在拉取 ..."
-    sub_refresh default
+    ok "订阅 'default' 已设为活跃"
 }
 
-sub_refresh() {
+sub_refresh() { (
     local name=${1:-$(_sub_active_name)}
     if [[ "$(conf_get pool)" == "on" ]]; then
         warn "节点池模式已开启: 用 proxy pool refresh 刷新所有订阅 / proxy pool off 退回单订阅"
@@ -466,24 +544,27 @@ sub_refresh() {
     ua=$(conf_get sub_ua)
     [[ -n "$ua" ]] || ua="mihomo/$("$bin" -v 2>/dev/null | awk '{print $3;exit}')"
 
+    local new
+    new=$(mktemp "$CONF_DIR/.config.new.XXXXXX") || die "无法创建订阅临时文件"
+    trap 'rm -f "$new"' EXIT
     info "拉取订阅 '$name' (UA: $ua) ..."
-    if ! curl -fsSL --max-time 30 -A "$ua" "$url" -o "$CONFIG.new" 2>/dev/null; then
+    if ! curl_download_private "$url" "$new" "$ua" 2>/dev/null; then
         die "拉取失败 (URL/UA/网络?), 配置未改动"
     fi
     local conv
-    if conv=$(_sub_convert "$CONFIG.new"); then
+    if conv=$(_sub_convert "$new"); then
         [[ -n "$conv" ]] && info "$conv"
     else
         die "订阅内容无法解析 (既不是 Clash YAML 也不是节点列表); 配置未改动"
     fi
-    _sub_sanitize "$CONFIG.new"
-    if ! mihomo_test "$CONFIG.new"; then
+    _sub_sanitize "$new"
+    if ! mihomo_test "$new"; then
         warn "新订阅校验失败, 未替换; 末尾:"
-        "$bin" -t -d "$CONF_DIR" -f "$CONFIG.new" 2>&1 | tail -3 >&2
-        rm -f "$CONFIG.new"; return 1
+        "$bin" -t -d "$CONF_DIR" -f "$new" 2>&1 | tail -3 >&2
+        return 1
     fi
-    cp -f "$CONFIG" "$BAK"; mv -f "$CONFIG.new" "$CONFIG"
-    [[ -n "$1" ]] && conf_set active_sub "$name"
+    cp -f "$CONFIG" "$BAK" || die "无法备份当前配置，订阅未替换"
+    mv -f "$new" "$CONFIG" || die "无法替换 config.yaml"
     ok "订阅 '$name' 已更新, 备份 → $BAK"
 
     # re-apply merge so prepend-rules survive the subscription refresh
@@ -492,7 +573,8 @@ sub_refresh() {
         source "$SCRIPT_DIR/lib/merge.sh"
         if _merge_rules >/dev/null 2>&1; then
             info "重新应用 merge 规则 ..."
-            merge_apply
+            ( PRESERVE_BAK=1 DEFER_APPLY=1 merge_apply ) \
+                || { cp -f "$BAK" "$CONFIG"; warn "merge 应用失败，订阅更新已回滚"; return 1; }
         fi
     fi
 
@@ -502,12 +584,18 @@ sub_refresh() {
         source "$SCRIPT_DIR/lib/region.sh"
         if [[ -n "$(_region_names)" ]]; then
             info "重新应用 region 组 ..."
-            region_apply || warn "region 组应用失败 (稍后重试: proxy region apply)"
+            ( PRESERVE_BAK=1 DEFER_APPLY=1 region_apply ) \
+                || { cp -f "$BAK" "$CONFIG"; warn "region 应用失败，订阅更新已回滚"; return 1; }
         fi
     fi
 
     # apply the on-disk config: hot-reload, or restart if controller is down
     # shellcheck source=service.sh
     source "$SCRIPT_DIR/lib/service.sh"
-    svc_apply
-}
+    if ! ( svc_apply ); then
+        cp -f "$BAK" "$CONFIG"
+        warn "新订阅无法应用，磁盘配置已回滚"
+        ( svc_apply ) >/dev/null 2>&1 || true
+        return 1
+    fi
+); }

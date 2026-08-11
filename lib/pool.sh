@@ -48,10 +48,15 @@ pool_on() {
 
 pool_off() {
     conf_set pool ""
-    ok "已退回单订阅模式, 用活跃订阅重建配置 ..."
+    info "正在用活跃订阅重建单订阅配置 ..."
     # shellcheck source=sub.sh
     source "$SCRIPT_DIR/lib/sub.sh"
-    sub_refresh
+    if ! sub_refresh; then
+        conf_set pool on
+        warn "重建失败，节点池模式保持开启"
+        return 1
+    fi
+    ok "已退回单订阅模式"
 }
 
 # --- fetch one subscription -> proxies section (pool-state/<name>.prox) ---
@@ -60,12 +65,12 @@ pool_off() {
 _pool_fetch() { # <name> <url> <ua> <work>
     local name=$1 url=$2 ua=$3 work=$4
     local raw="$work/$name.raw" prox="$work/$name.prox"
-    if ! curl -fsSL --max-time 30 -A "$ua" "$url" -o "$raw" 2>/dev/null; then
+    if ! curl_download_private "$url" "$raw" "$ua" 2>/dev/null; then
         warn "订阅 '$name' 拉取失败"
     else
-        _sub_convert "$raw" >/dev/null 2>&1 || true
-        _sub_sanitize "$raw" >/dev/null 2>&1 || true
-        if python3 - "$raw" "$prox" <<'PY'
+        if _sub_convert "$raw" >/dev/null 2>&1 \
+           && _sub_sanitize "$raw" >/dev/null 2>&1 \
+           && python3 - "$raw" "$prox" <<'PY'
 import sys, re
 src, dst = sys.argv[1], sys.argv[2]
 lines = open(src, encoding='utf-8').read().splitlines(keepends=True)
@@ -87,7 +92,7 @@ for ln in lines[idx:]:
 open(dst, 'w').write(''.join(out))
 PY
         then
-            cp -f "$prox" "$POOL_STATE_DIR/$name.prox"
+            : > "$work/$name.fresh"
             return 0
         fi
         warn "订阅 '$name' 解析失败 (内容不是有效 Clash 配置)"
@@ -364,59 +369,92 @@ if other:
 member = '\n'.join('      - %s' % c for c in chain)
 entry_groups = '\n'.join('        - %s' % c for c in ['🚀 自动'] + chain)
 
-out = []
-out.append(port_keys.rstrip('\n'))
-out.append('mode: rule')
-out.append('log-level: info')
-out.append('external-controller: %s' % ctrl)
-if secret:
-    out.append('secret: %s' % secret)
-if extui:
-    out.append('external-ui: %s' % extui)
-if lan == 'on':
-    out.append("allow-lan: true")
-    out.append("bind-address: '*'")
-elif lan == 'off':
-    out.append('allow-lan: false')
-if tun:
-    out.append('')
-    out.append(tun.rstrip('\n'))
-out.append('')
-out.append('dns:')
-out.append('    enable: true')
-out.append('    ipv6: false')
-out.append('    enhanced-mode: fake-ip')
-out.append('    fake-ip-range: 198.18.0.1/16')
-out.append('    default-nameserver: [223.5.5.5, 119.29.29.29]')
-out.append("    nameserver: ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query', 223.5.5.5, 119.29.29.29]")
-out.append("    fallback: ['https://8.8.8.8/dns-query', 'https://1.1.1.1/dns-query', 8.8.8.8, 1.1.1.1]")
-out.append('proxies:')
-out.append('\n'.join(proxies_out))
-out.append('')
-out.append('proxy-groups:')
-out.append('    - name: 节点选择')
-out.append('      type: select')
-out.append('      proxies:')
-out.append(entry_groups)
-out.append('    - name: 🚀 自动')
-out.append('      type: fallback')
-out.append('      url: http://www.gstatic.com/generate_204')
-out.append('      interval: 300')
-out.append('      proxies:')
-out.append(member)
-out.extend(group_lines)
-out.append('')
-out.append('rules:')
-out.append("    - 'GEOIP,CN,DIRECT'")
-out.append("    - 'MATCH,节点选择'")
-out.append('')
-open(outpath, 'w').write('\n'.join(out))
+proxies_section = 'proxies:\n' + ''.join(proxies_out).rstrip('\n') + '\n'
+groups = ['proxy-groups:',
+          '    - name: 节点选择',
+          '      type: select',
+          '      proxies:',
+          entry_groups,
+          '    - name: 🚀 自动',
+          '      type: fallback',
+          '      url: http://www.gstatic.com/generate_204',
+          '      interval: 300',
+          '      proxies:',
+          member]
+groups.extend(group_lines)
+groups_section = '\n'.join(groups).rstrip('\n') + '\n'
+
+def replace_top_section(text, key, section):
+    lines = text.splitlines(keepends=True)
+    start = end = None
+    for i, line in enumerate(lines):
+        if re.match(r'^%s\s*:' % re.escape(key), line):
+            start = i
+            end = i + 1
+            while end < len(lines):
+                cur = lines[end]
+                if cur.strip() and re.match(r'^[A-Za-z0-9_-]+\s*:', cur):
+                    break
+                end += 1
+            break
+    replacement = section.splitlines(keepends=True)
+    if start is None:
+        if lines and lines[-1].strip():
+            lines.append('\n')
+        lines.extend(replacement)
+    else:
+        lines[start:end] = replacement
+    return ''.join(lines)
+
+if old.strip():
+    rendered = replace_top_section(old, 'proxies', proxies_section)
+    rendered = replace_top_section(rendered, 'proxy-groups', groups_section)
+    old_groups = set(re.findall(r'(?m)^\s*-\s+name:\s*["\']?(.+?)["\']?\s*$', old))
+    old_groups.update(re.findall(r'(?m)^\s*-\s*\{[^}\n]*\bname:\s*["\']?([^,}"\']+)', old))
+    new_groups = {'节点选择', '🚀 自动'} | set(chain)
+    stale_groups = old_groups - new_groups
+    if stale_groups:
+        ls = rendered.splitlines(keepends=True)
+        in_rules = False
+        for i, line in enumerate(ls):
+            if re.match(r'^rules:\s*$', line):
+                in_rules = True
+                continue
+            if in_rules and line.strip() and re.match(r'^[A-Za-z0-9_-]+\s*:', line):
+                in_rules = False
+            if not in_rules:
+                continue
+            m = re.match(r'^(\s*-\s*)(.*?)(\r?\n?)$', line)
+            if not m:
+                continue
+            raw = m.group(2).strip()
+            quoted = re.match(r"^(['\"])(.*?)\1(\s+#.*)?$", raw)
+            if quoted:
+                quote, value, comment = quoted.group(1), quoted.group(2), quoted.group(3) or ''
+            else:
+                quote = ''
+                commented = re.match(r'^(.*?)(\s+#.*)?$', raw)
+                value, comment = commented.group(1).rstrip(), commented.group(2) or ''
+            parts = value.split(',')
+            idx = -2 if parts and parts[-1].strip() == 'no-resolve' else -1
+            if parts and parts[idx].strip() in stale_groups:
+                parts[idx] = '节点选择'
+                value = ','.join(parts)
+                rendered_rule = quote + value + quote if quote else value
+                ls[i] = m.group(1) + rendered_rule + comment + m.group(3)
+        rendered = ''.join(ls)
+else:
+    rendered = (port_keys + 'mode: rule\nlog-level: info\n'
+                'external-controller: %s\n' % ctrl)
+    rendered += proxies_section + groups_section
+    rendered += "rules:\n    - 'GEOIP,CN,DIRECT'\n    - 'MATCH,节点选择'\n"
+open(outpath, 'w').write(rendered)
 print('merged %d nodes from %d entries' % (len(numbered), len(entries)))
 PY
 }
 
 # --- build the pool: fetch all subs, assemble, validate, replace, apply ---
-pool_refresh() {
+pool_refresh() { (
     json_guard
     local bin ua
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制 (运行 proxy install)"
@@ -444,8 +482,8 @@ pool_refresh() {
     fi
     (( ${#names[@]} > 0 )) || die "无订阅 (先: proxy sub add <name> <url>)"
 
-    local work; work=$(mktemp -d)
-    trap 'rm -rf "$work"' RETURN
+    local work; work=$(mktemp -d) || die "无法创建节点池临时目录"
+    trap 'rm -rf "$work"' EXIT
     local i okn=0
     for i in "${!names[@]}"; do
         info "拉取 '${names[$i]}' ..."
@@ -465,7 +503,15 @@ pool_refresh() {
         "$bin" -t -d "$CONF_DIR" -f "$out" 2>&1 | tail -4 >&2
         return 1
     fi
-    cp -f "$CONFIG" "$BAK"; mv -f "$out" "$CONFIG"
+    local fresh fname
+    for fresh in "$work"/*.fresh; do
+        [[ -f "$fresh" ]] || continue
+        fname=$(basename "$fresh" .fresh)
+        cp -f "$work/$fname.prox" "$POOL_STATE_DIR/$fname.prox" \
+            || die "无法提交节点池缓存: $fname"
+    done
+    cp -f "$CONFIG" "$BAK" || die "无法备份当前配置，节点池未替换"
+    mv -f "$out" "$CONFIG" || die "无法替换 config.yaml"
     ok "节点池已构建: $okn/${#names[@]} 个订阅生效"
     date +%s > "$POOL_STATE_DIR/.built"
 
@@ -473,14 +519,20 @@ pool_refresh() {
     if [[ -f "$MERGE_FILE" ]]; then
         # shellcheck source=merge.sh
         source "$SCRIPT_DIR/lib/merge.sh"
-        merge_apply
+        ( PRESERVE_BAK=1 DEFER_APPLY=1 merge_apply ) \
+            || { cp -f "$BAK" "$CONFIG"; warn "merge 应用失败，节点池更新已回滚"; return 1; }
     fi
 
     # shellcheck source=service.sh
     source "$SCRIPT_DIR/lib/service.sh"
-    svc_apply
+    if ! ( svc_apply ); then
+        cp -f "$BAK" "$CONFIG"
+        warn "节点池配置无法应用，磁盘配置已回滚"
+        ( svc_apply ) >/dev/null 2>&1 || true
+        return 1
+    fi
     pool_status
-}
+); }
 
 pool_status() {
     # shellcheck source=region.sh   (REGIONS_FILE 定义在此)

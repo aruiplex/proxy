@@ -107,13 +107,17 @@ curl_download_private() { # <url> <output> [user-agent]
     local url=$1 out=$2 ua=${3:-}
     {
         printf 'url = "%s"\n' "$(_curl_cfg_escape "$url")"
-        [[ -n "$ua" ]] && printf 'user-agent = "%s"\n' "$(_curl_cfg_escape "$ua")"
+        if [[ -n "$ua" ]]; then
+            printf 'user-agent = "%s"\n' "$(_curl_cfg_escape "$ua")"
+        fi
     } | curl -fsSL --max-time 30 --config - -o "$out"
 }
 
 _ctrl_curl_config() { # <url> <secret>
     printf 'url = "%s"\n' "$(_curl_cfg_escape "$1")"
-    [[ -n "$2" ]] && printf 'header = "Authorization: Bearer %s"\n' "$(_curl_cfg_escape "$2")"
+    if [[ -n "$2" ]]; then
+        printf 'header = "Authorization: Bearer %s"\n' "$(_curl_cfg_escape "$2")"
+    fi
 }
 
 # GET a controller path; prints body to stdout

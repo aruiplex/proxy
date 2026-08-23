@@ -445,6 +445,17 @@ if local_tun:
 
 open(path, 'w').write(t)
 PY
+    local docker_st docker_addr docker_port
+    docker_st=$(conf_get docker)
+    if [[ "$docker_st" == on || "$docker_st" == off ]]; then
+        # shellcheck source=docker.sh
+        source "$SCRIPT_DIR/lib/docker.sh"
+        docker_addr=$(conf_get docker_listen)
+        [[ -n "$docker_addr" ]] || docker_addr=$(_docker_gateway)
+        docker_port=$(_docker_port)
+        _docker_patch_yaml "$1" "$docker_st" "$docker_addr" "$docker_port" \
+            || die "订阅清理后写入 docker 监听失败"
+    fi
 }
 
 # mask the token segment of a subscription URL for safe display

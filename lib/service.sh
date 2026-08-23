@@ -240,6 +240,14 @@ print(len(d.get('connections') or []), d.get('uploadTotal',0), d.get('downloadTo
     else
         info "  TUN:       关闭"
     fi
+
+    local dkr dkr_addr dkr_port
+    dkr=$(conf_get docker)
+    if [[ "$dkr" == on ]]; then
+        dkr_addr=$(conf_get docker_listen)
+        dkr_port=$(awk -F': *' '/^mixed-port:/{print $2;exit}' "$CONFIG" 2>/dev/null)
+        ok "  Docker:     on → http://${dkr_addr:-172.17.0.1}:${dkr_port:-7890}"
+    fi
 }
 
 svc_log() {

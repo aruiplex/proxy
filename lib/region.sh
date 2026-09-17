@@ -26,14 +26,14 @@
 REGION_MARK_BEGIN="# >>> local-region (auto) >>>"
 REGION_MARK_END="# <<< local-region (auto) <<<"
 REGIONS_FILE="$CONF_DIR/regions.conf"
-REGION_MASTER="🚀 自动"
+REGION_MASTER="AUTO"
 
 _region_ensure() {
     if [[ ! -f "$REGIONS_FILE" ]]; then
         mkdir -p "$CONF_DIR"
         cat > "$REGIONS_FILE" <<'EOF'
 # proxy region 定义, 每行: name<TAB>regex   (regex 匹配节点名, RE2 语法)
-# 用 proxy region add <name> '<regex>' 添加, 例: proxy region add 日本 '(?i)(japan|🇯🇵)'
+# 用 proxy region add <name> '<regex>' 添加, 例: proxy region add JP '(?i)(japan|jp)'
 EOF
     fi
 }
@@ -47,7 +47,7 @@ _region_exclude()  { conf_get region_exclude; }
 
 _region_names() { awk -F'\t' 'NF && $1 !~ /^#/ {print $1}' "$REGIONS_FILE"; }
 _region_regex() { awk -F'\t' -v n="$1" '$1==n {print $2; exit}' "$REGIONS_FILE"; }
-_region_group() { printf '%s-自动' "$1"; }   # region name -> group name
+_region_group() { printf '%s-Auto' "$1"; }   # region name -> group name
 
 # first Selector group in config.yaml's proxy-groups section (the one rules
 # point at, e.g. 节点选择); text-parse so this works with the controller down.
@@ -286,13 +286,18 @@ except Exception: print()
 _region_preset_regex() {
     local n; n=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
     case "$n" in
-        hk|hongkong|香港)     printf '(?i)(hong[ -]?kong|🇭🇰|\\bhk\\b)' ;;
-        sg|singapore|新加坡)  printf '(?i)(singapore|🇸🇬|\\bsg\\b|狮城)' ;;
-        us|usa|america|美国) printf '(?i)(united states|🇺🇸|america|\\bus\\b|美)' ;;
-        jp|japan|日本)       printf '(?i)(japan|🇯🇵|\\bjp\\b|东京|大阪)' ;;
-        tw|taiwan|台湾)      printf '(?i)(taiwan|🇹🇼|\\btw\\b|台北)' ;;
-        kr|korea|韩国)       printf '(?i)(korea|🇰🇷|\\bkr\\b|首尔)' ;;
-        uk|london|英国)      printf '(?i)(united kingdom|🇬🇧|\\buk\\b|伦敦)' ;;
+        hk|hongkong|香港)     printf '(?i)(hong[ -]?kong|\\bhk\\b|香港)' ;;
+        sg|singapore|新加坡)  printf '(?i)(singapore|\\bsg\\b|新加坡|狮城)' ;;
+        us|usa|america|美国) printf '(?i)(united states|america|\\bus\\b|usa|美国|美)' ;;
+        jp|japan|日本)       printf '(?i)(japan|\\bjp\\b|日本|东京|大阪)' ;;
+        tw|taiwan|台湾)      printf '(?i)(taiwan|\\btw\\b|台湾|台北)' ;;
+        kr|korea|韩国)       printf '(?i)(korea|\\bkr\\b|韩国|首尔)' ;;
+        uk|gb|london|英国)   printf '(?i)(united kingdom|\\buk\\b|\\bgb\\b|英国|伦敦)' ;;
+        de|germany|德国)     printf '(?i)(germany|\\bde\\b|德国|法兰克福)' ;;
+        fr|france|法国)      printf '(?i)(france|\\bfr\\b|法国|巴黎)' ;;
+        ca|canada|加拿大)    printf '(?i)(canada|\\bca\\b|加拿大)' ;;
+        au|australia|澳大利亚) printf '(?i)(australia|\\bau\\b|澳大利亚|澳洲)' ;;
+        nl|netherlands|holland|荷兰) printf '(?i)(netherlands|holland|\\bnl\\b|荷兰)' ;;
         *) return 1 ;;
     esac
 }
@@ -326,9 +331,33 @@ region_add() {
     rm -f "$edit_bak" "$config_bak"
 }
 
+_region_pick() { # [prompt]
+    local prompt=${1:-"选择地区"}
+    local names=() n
+    while IFS= read -r n; do
+        [[ -n "$n" ]] && names+=("$n")
+    done < <(_region_names 2>/dev/null)
+    (( ${#names[@]} > 0 )) || { info "无已定义的地区"; return 1; }
+    if has fzf; then
+        printf '%s\n' "${names[@]}" | fzf --prompt="$prompt> " --height=40% --reverse --info=inline 2>/dev/null
+    else
+        local i
+        for i in "${!names[@]}"; do printf '%2d) %s\n' "$((i+1))" "${names[$i]}" >&2; done
+        local choice
+        printf '%s [#] (q 取消): ' "$prompt" >&2
+        read -r choice </dev/tty 2>/dev/null || return 1
+        [[ "$choice" == q || "$choice" == Q || -z "$choice" ]] && return 1
+        [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#names[@]} )) || return 1
+        printf '%s' "${names[$((choice-1))]}"
+    fi
+}
+
 region_rm() {
     local name=$1 edit_bak config_bak
-    [[ -n "$name" ]] || die "用法: proxy region rm <name>"
+    if [[ -z "$name" ]]; then
+        name=$(_region_pick "选择要删除的地区") || { info "取消"; return 0; }
+    fi
+    [[ -n "$name" ]] || die "用法: proxy region rm [name]"
     [[ -f "$REGIONS_FILE" ]] || die "无 $REGIONS_FILE"
     awk -F'\t' -v n="$name" '$1==n {found=1} END{exit !found}' "$REGIONS_FILE" || die "无此地区: $name"
     edit_bak=$(mktemp "$CONF_DIR/.regions.edit.XXXXXX") || die "无法创建 regions 临时备份"
@@ -418,13 +447,14 @@ region_preset() {
 region_cmd() {
     local sub=${1:-}; shift || true
     case "$sub" in
-        apply) region_apply "$@" ;;
+        apply)   region_apply "$@" ;;
         list|ls) region_list "$@" ;;
-        add)   region_add "$@" ;;
-        rm)    region_rm "$@" ;;
-        set)   region_set "$@" ;;
-        preset) region_preset "$@" ;;
-        -h|--help|"") say "用法: proxy region apply | list | preset | add <name> ['<regex>'] | rm <name> | set interval|url|exclude <value>" ;;
+        add)     region_add "$@" ;;
+        rm)      region_rm "$@" ;;
+        set)     region_set "$@" ;;
+        preset)  region_preset "$@" ;;
+        "")      if [[ -t 0 ]]; then region_list; else say "用法: proxy region apply | list | preset | add <name> ['<regex>'] | rm [name] | set interval|url|exclude <value>"; fi ;;
+        -h|--help) say "用法: proxy region apply | list | preset | add <name> ['<regex>'] | rm [name] | set interval|url|exclude <value>" ;;
         *) die "proxy region: 未知子命令 $sub" ;;
     esac
 }

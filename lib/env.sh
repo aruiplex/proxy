@@ -81,13 +81,33 @@ env_cmd() {
         on)
             mkdir -p "$CONF_DIR"; printf 'on\n' > "$ENV_STATE"
             ok "代理环境变量已开启 (当前 shell 及新 shell 已自动生效)"
+            if ! detect_running; then
+                warn "⚠️ mihomo 核心未在运行，流量尚无法转发。可运行: proxy start"
+            fi
             ;;
         off)
             mkdir -p "$CONF_DIR"; printf 'off\n' > "$ENV_STATE"
             ok "代理环境变量已关闭 (当前 shell 及新 shell 已自动清除)"
             ;;
+        toggle)
+            local cur; cur=$(cat "$ENV_STATE" 2>/dev/null)
+            if [[ "$cur" == "on" ]]; then
+                env_cmd off
+            else
+                env_cmd on
+            fi
+            ;;
         show) _env_exports ;;
-        -h|--help|"") say "用法: proxy env on|off|show  (开关存 $ENV_STATE, 由 .bashrc 钩子在 shell 启动时应用)" ;;
+        -h|--help) say "用法: proxy env on|off|toggle|show  (开关存 $ENV_STATE, 由 .bashrc 钩子在 shell 启动时应用)" ;;
+        "")
+            local st; st=$(cat "$ENV_STATE" 2>/dev/null)
+            if [[ "$st" == "on" ]]; then
+                ok "当前代理环境变量: on (开启)"
+            else
+                info "当前代理环境变量: off (关闭)"
+            fi
+            say "用法: proxy env on | off | toggle | show  (快捷指令: proxy on / proxy off / proxy toggle)"
+            ;;
         *) die "proxy env: 未知子命令 $sub" ;;
     esac
 }

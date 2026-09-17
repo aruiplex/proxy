@@ -50,6 +50,15 @@ usage() {
     local w=48 n="${C_N}"
     printf '%sproxy%s — mihomo (Clash.Meta) 管理 CLI\n\n' "${C_B}${C_Y}" "$n"
 
+    printf '  %s⚡ 常用快捷%s\n' "${C_B}" "$n"
+    printf '  %-*s %s\n' "$w" "on | off | toggle" "开启 / 关闭 / 切换终端代理环境"
+    printf '  %-*s %s\n' "$w" "use [<#|子串>]" "交互选择或按序号/子串切换节点 (同 node use)"
+    printf '  %-*s %s\n' "$w" "test [GROUP]" "测节点延迟并即选切换 (同 node test)"
+    printf '  %-*s %s\n' "$w" "ls | nodes" "查看当前节点列表 (同 node list)"
+    printf '  %-*s %s\n' "$w" "refresh | update" "拉取刷新活跃订阅 (同 sub refresh)"
+    printf '  %-*s %s\n' "$w" "menu" "呼出交互式快捷控制面板"
+    printf '\n'
+
     printf '  %s📦 安装%s\n' "${C_B}" "$n"
     printf '  %-*s %s\n' "$w" "install [--via github|brew|gz:FILE] [--bin PATH]" "检测/下载 mihomo + 引导配置 + 装钩子"
     printf '  %-*s %s\n' "$w" "init" "仅初始化配置 + 钩子 (已有二进制)"
@@ -60,7 +69,7 @@ usage() {
     printf '  %s🚀 运行%s\n' "${C_B}" "$n"
     printf '  %-*s %s\n' "$w" "start | stop | restart" "启停 (nohup 直连二进制, brew 感知)"
     printf '  %-*s %s\n' "$w" "status" "运行/版本/出口节点/流量/端口/TUN/代理环境 + 自动诊断"
-    printf '  %-*s %s\n' "$w" "log [-f]" "日志 (-f 跟随)"
+    printf '  %-*s %s\n' "$w" "log [-f]" "日志 (-f 跟随, 彩色高亮)"
     printf '\n'
 
     printf '  %s🌍 节点 / 订阅%s\n' "${C_B}" "$n"
@@ -72,8 +81,8 @@ usage() {
     printf '\n'
 
     printf '  %s🧰 工具%s\n' "${C_B}" "$n"
-    printf '  %-*s %s\n' "$w" "env on | off | show" "代理环境变量 (当前 shell 无感生效)"
-    printf '  %-*s %s\n' "$w" "check" "系统代理 + 外网连通性检查"
+    printf '  %-*s %s\n' "$w" "env on | off | toggle | show" "代理环境变量 (当前 shell 无感生效)"
+    printf '  %-*s %s\n' "$w" "check" "系统代理 + 外网连通性检查与诊断"
     printf '  %-*s %s\n' "$w" "route <URL> [--json]" "路由检测: 代理 vs 直连对比延迟"
     printf '  %-*s %s\n' "$w" "monitor [--interval 秒] [--sort down|up] [--once]" "实时流量监控 (Ctrl-C 退出)"
     printf '  %-*s %s\n' "$w" "ui [--secret [VALUE]|--no-secret] | off | status" "Web 仪表盘 (默认随机密码)"
@@ -90,6 +99,17 @@ usage() {
 
 cmd=$1; shift || true
 case $cmd in
+    # --- shortcuts ---
+    on)             load env; env_cmd on "$@" ;;
+    off)            load env; env_cmd off "$@" ;;
+    toggle)         load env; env_cmd toggle "$@" ;;
+    use|switch)     load node; node_use "$@" ;;
+    test)           load node; node_test "$@" ;;
+    ls|nodes)       load node; node_list "$@" ;;
+    refresh|update) load sub; sub_refresh "$@" ;;
+    menu)           load menu; proxy_menu "$@" ;;
+
+    # --- lifecycle & management ---
     install)        load install; proxy_install "$@" ;;
     init)           load install; proxy_init "$@" ;;
     doctor)         load install; proxy_doctor "$@" ;;
@@ -120,6 +140,7 @@ case $cmd in
 
     _login)         load env; env_login ;;     # internal: called by .bashrc hook
 
-    -h|--help|help|"") usage ;;
+    "")             if [[ -t 0 && -t 1 ]]; then load menu; proxy_menu "$@"; else usage; fi ;;
+    -h|--help|help) usage ;;
     *) die "未知命令: $cmd (运行 proxy 查看帮助)" ;;
 esac

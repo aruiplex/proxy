@@ -470,6 +470,27 @@ print(u)
 "
 }
 
+_sub_pick() { # [prompt]
+    local prompt=${1:-"选择订阅"}
+    local names=() n
+    while IFS=$'\t' read -r n _; do
+        [[ -n "$n" ]] && names+=("$n")
+    done < "$SUBS_FILE"
+    (( ${#names[@]} > 0 )) || { info "无可用订阅"; return 1; }
+    if has fzf; then
+        printf '%s\n' "${names[@]}" | fzf --prompt="$prompt> " --height=40% --reverse --info=inline 2>/dev/null
+    else
+        local i
+        for i in "${!names[@]}"; do printf '%2d) %s\n' "$((i+1))" "${names[$i]}" >&2; done
+        local choice
+        printf '%s [#] (q 取消): ' "$prompt" >&2
+        read -r choice </dev/tty 2>/dev/null || return 1
+        [[ "$choice" == q || "$choice" == Q || -z "$choice" ]] && return 1
+        [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#names[@]} )) || return 1
+        printf '%s' "${names[$((choice-1))]}"
+    fi
+}
+
 sub_cmd() {
     _sub_ensure
     local sub=${1:-}; shift || true
@@ -481,7 +502,8 @@ sub_cmd() {
         show)    sub_show "$@" ;;
         refresh) sub_refresh "$@" ;;
         set)     sub_set "$@" ;;     # legacy
-        -h|--help|"") say "用法: proxy sub add <name> <url> | rm <name> | list | use <name> [--no-refresh] | show [name] | refresh [name] | set <url>" ;;
+        "")      if [[ -t 0 ]]; then sub_list; else say "用法: proxy sub add <name> <url> | rm [name] | list | use [name] [--no-refresh] | show [name] | refresh [name] | set <url>"; fi ;;
+        -h|--help) say "用法: proxy sub add <name> <url> | rm [name] | list | use [name] [--no-refresh] | show [name] | refresh [name] | set <url>" ;;
         *) die "proxy sub: 未知子命令 $sub" ;;
     esac
 }
@@ -498,7 +520,10 @@ sub_add() {
 
 sub_rm() {
     local name=$1
-    [[ -n "$name" ]] || die "用法: proxy sub rm <name>"
+    if [[ -z "$name" ]]; then
+        name=$(_sub_pick "选择要删除的订阅") || { info "取消"; return 0; }
+    fi
+    [[ -n "$name" ]] || die "用法: proxy sub rm [name]"
     [[ -n "$(_sub_get_url "$name")" ]] || die "无此订阅: $name"
     _sub_rm "$name"
     if [[ "$(conf_get active_sub)" == "$name" ]]; then
@@ -533,10 +558,14 @@ sub_use() {
         warn "节点池模式已开启: 用 proxy pool refresh 刷新所有订阅 / proxy pool off 退回单订阅"
         return 1
     fi
-    [[ -n "$name" ]] || die "用法: proxy sub use <name> [--no-refresh]"
-    [[ "$1" == "--no-refresh" ]] && { norefresh=1; }
-    # allow: proxy sub use <name> --no-refresh
+    if [[ "$1" == "--no-refresh" ]]; then
+        norefresh=1
+        name=""
+    fi
     [[ "${2:-}" == "--no-refresh" ]] && norefresh=1
+    if [[ -z "$name" ]]; then
+        name=$(_sub_pick "选择切换的订阅") || { info "取消"; return 0; }
+    fi
     [[ -n "$(_sub_get_url "$name")" ]] || die "无此订阅: $name (先 proxy sub add)"
     if (( norefresh )); then
         conf_set active_sub "$name"

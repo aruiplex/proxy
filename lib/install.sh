@@ -203,7 +203,8 @@ bashrc_hook_install() {
 
 # >>> proxy (auto) >>>
 proxy() {
-    if [[ "\$1" == "env" && ( "\$2" == "on" || "\$2" == "off" ) ]]; then
+    if [[ "\$1" == "on" || "\$1" == "off" || "\$1" == "toggle" ]] || \
+       [[ "\$1" == "env" && ( "\$2" == "on" || "\$2" == "off" || "\$2" == "toggle" ) ]]; then
         "$SCRIPT_DIR/proxy" "\$@"
         eval "\$( "$SCRIPT_DIR/proxy" env show )"
     else

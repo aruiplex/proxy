@@ -14,7 +14,7 @@ _proxy_complete() {
     sub1="${COMP_WORDS[1]}"
     sub2="${COMP_WORDS[2]}"
 
-    local cmds="install init doctor upgrade uninstall start stop restart status log env node merge sub tun check route monitor ui lan docker pool sync"
+    local cmds="install init doctor upgrade uninstall start stop restart status log env on off toggle node use test ls nodes switch sub update refresh merge region tun check route monitor ui lan docker pool sync menu"
 
     case "$COMP_CWORD" in
         1)
@@ -22,8 +22,9 @@ _proxy_complete() {
             ;;
         2)
             case "$sub1" in
-                env)     COMPREPLY=( $(compgen -W "on off show" -- "$cur") ) ;;
+                env)     COMPREPLY=( $(compgen -W "on off toggle show" -- "$cur") ) ;;
                 node)    COMPREPLY=( $(compgen -W "list test use" -- "$cur") ) ;;
+                region)  COMPREPLY=( $(compgen -W "list apply preset add rm set" -- "$cur") ) ;;
                 merge)   COMPREPLY=( $(compgen -W "list add rm diff apply" -- "$cur") ) ;;
                 sub)     COMPREPLY=( $(compgen -W "add rm list use show refresh set" -- "$cur") ) ;;
                 tun)     COMPREPLY=( $(compgen -W "on off" -- "$cur") ) ;;
@@ -33,6 +34,25 @@ _proxy_complete() {
                 pool)    COMPREPLY=( $(compgen -W "on off status refresh" -- "$cur") ) ;;
                 monitor) COMPREPLY=( $(compgen -W "--interval --sort --once" -- "$cur") ) ;;
                 sync)    COMPREPLY=( $(compgen -W "export import push pull" -- "$cur") ) ;;
+                use|switch|test)
+                    local IFS=$'\n' names n cur_lc n_lc
+                    if command -v timeout >/dev/null 2>&1; then
+                        names=$(timeout 2 "$_PROXY_COMPLETE_DIR/proxy" node list 2>/dev/null | sed -n 's/^ *[0-9]*) //p')
+                    else
+                        names=$("$_PROXY_COMPLETE_DIR/proxy" node list 2>/dev/null | sed -n 's/^ *[0-9]*) //p')
+                    fi
+                    COMPREPLY=()
+                    cur_lc=$(printf '%s' "$cur" | tr '[:upper:]' '[:lower:]')
+                    for n in $names; do
+                        n_lc=$(printf '%s' "$n" | tr '[:upper:]' '[:lower:]')
+                        [[ -z "$cur" || "$n_lc" == *"$cur_lc"* ]] && COMPREPLY+=("$n")
+                    done
+                    ;;
+                update|refresh)
+                    local IFS=$'\n' subs
+                    subs=$(awk -F'\t' '{print $1}' "${CONF_DIR:-$HOME/.config/mihomo}/subs.conf" 2>/dev/null)
+                    COMPREPLY=( $(compgen -W "$subs" -- "$cur") )
+                    ;;
             esac
             return
             ;;
@@ -43,8 +63,6 @@ _proxy_complete() {
                         use|test)
                             # node names via `proxy node list`; guard against a
                             # down controller hanging the tab (timeout where available).
-                            # substring match (like `node use`), since names carry
-                            # flag emojis that would defeat compgen prefix matching
                             local IFS=$'\n' names n cur_lc n_lc
                             if command -v timeout >/dev/null 2>&1; then
                                 names=$(timeout 2 "$_PROXY_COMPLETE_DIR/proxy" node list 2>/dev/null | sed -n 's/^ *[0-9]*) //p')
@@ -70,9 +88,9 @@ _proxy_complete() {
                     ;;
                 merge)
                     case "$sub2" in
+                        add)
+                            COMPREPLY=( $(compgen -W "direct proxy reject" -- "$cur") ) ;;
                         rm)
-                            # substring match, like `merge rm` itself (rules carry
-                            # a rule-type prefix that would defeat compgen prefixing)
                             local IFS=$'\n' rules r
                             rules=$(awk '/^  - /{sub(/^  - /,"");print}' "${CONF_DIR:-$HOME/.config/mihomo}/merge.yaml" 2>/dev/null)
                             COMPREPLY=()
@@ -80,6 +98,16 @@ _proxy_complete() {
                                 [[ -z "$cur" || "$r" == *"$cur"* ]] && COMPREPLY+=("$r")
                             done
                             ;;
+                    esac
+                    ;;
+                region)
+                    case "$sub2" in
+                        rm)
+                            local IFS=$'\n' regions
+                            regions=$(awk -F'\t' 'NF && $1 !~ /^#/ {print $1}' "${CONF_DIR:-$HOME/.config/mihomo}/regions.conf" 2>/dev/null)
+                            COMPREPLY=( $(compgen -W "$regions" -- "$cur") ) ;;
+                        set)
+                            COMPREPLY=( $(compgen -W "interval url exclude" -- "$cur") ) ;;
                     esac
                     ;;
                 ui)

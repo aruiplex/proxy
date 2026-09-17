@@ -48,34 +48,39 @@ git clone <repo> ~/scripts/proxy
 
 ### 3. 让当前 shell 走代理 + 验证
 
+### 3. 让当前 shell 走代理 + 验证
+
 ```bash
-proxy env on      # 开启代理环境变量（当前 shell 及之后所有新开终端瞬间无感生效！）
-proxy check       # 测: 系统代理状态 + 外网连通 + 出口 IP
+proxy on          # 快捷开启代理环境变量（当前 shell 及之后所有新开终端瞬间无感生效！）
+proxy check       # 测: 系统代理状态 + 外网连通 + 出口 IP 与诊断
 proxy status      # 看: 进程/端口/控制器/出口节点
 ```
 
-`proxy env on` 把开关写入 `~/.config/mihomo/env.state`。通过自动注入的 Shell 包装函数，**当前 Shell 及未来新建终端无需手敲 `eval`，直接无感生效**；当代理关闭时，新开终端具备 0ms 开销快路，绝不拖慢终端启动。
+`proxy on`（或 `proxy env on`）把开关写入 `~/.config/mihomo/env.state`。通过自动注入的 Shell 包装函数，**当前 Shell 及未来新建终端无需手敲 `eval`，直接无感生效**；当代理关闭时，新开终端具备 0ms 开销快路，绝不拖慢终端启动。
 
 ### 4. 选个出口节点
 
 ```bash
-proxy node list          # 带序号, 机场信息节点已过滤
-proxy node use 5         # 按序号切
-proxy node use "japan 03"  # 按子串(唯一则直接切; 多义弹菜单)
-proxy node use           # 无参: 装了 fzf 模糊搜, 没装就序号菜单
+proxy ls                 # 快捷列出节点 (当前节点带 * [当前] 高亮)
+proxy test               # 测速全部节点 (动态进度 + 色彩分级 + 测完支持 fzf/序号直接切换)
+proxy use 5              # 按序号切
+proxy use "japan 03"     # 按子串(唯一则直接切; 多义弹菜单)
+proxy use                # 无参: 装了 fzf 模糊搜, 没装就序号菜单
 ```
 
 ### 完成。日常速查
 
 ```bash
+proxy                                            # 无参直接呼出交互式快捷控制面板 (或敲 proxy menu)
 proxy status                                     # 看状态
-proxy node use                                   # 换节点
-proxy env off                                    # 关代理(当前 shell 及新 shell 自动清除)
-proxy sub refresh                                # 更新订阅(刷新后 merge 规则自动重新前置)
-proxy merge add direct google.com                # 快捷加一条直连规则 (或加 'DOMAIN-SUFFIX,foo.com,DIRECT')
+proxy on / proxy off / proxy toggle              # 一键开/关/切换代理环境
+proxy use                                        # 换节点 (fzf/交互选择)
+proxy test                                       # 测延迟并选优
+proxy refresh                                    # 更新订阅 (刷新后 merge 规则自动重新前置)
+proxy merge add direct google.com                # 快捷加一条直连规则 (或无参交互添加)
 proxy region preset                              # 一键加载预设地区分组 (HK, SG, JP, US) 与排除规则
-proxy log -f                                     # 实时看日志
-proxy doctor                                     # 环境体检
+proxy log -f                                     # 实时看彩色高亮日志
+proxy doctor                                     # 环境体检清单
 ```
 
 ---
@@ -99,20 +104,33 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 
 ## 命令一览
 
+### ⚡ 常用快捷指令
+
+| 快捷命令 | 等价原命令 | 说明 |
+|----------|------------|------|
+| `proxy on` / `off` / `toggle` | `proxy env on` / `off` / `toggle` | 开启/关闭/切换终端代理环境变量 |
+| `proxy use [<#\|子串>]` | `proxy node use [<#\|子串>]` | 交互选择或按序号/子串切换节点 |
+| `proxy test [GROUP]` | `proxy node test [GROUP]` | 测节点延迟并即选切换 |
+| `proxy ls` / `proxy nodes` | `proxy node list` | 查看当前节点列表（高亮当前节点） |
+| `proxy refresh` / `proxy update` | `proxy sub refresh` | 拉取刷新活跃订阅 |
+| `proxy menu` / `proxy` | - | 交互式快捷控制面板（无参回车直接进入） |
+
+### 🛠️ 完整管理命令
+
 | 命令 | 说明 |
 |------|------|
 | `proxy install [--bin PATH] [--via github\|brew\|gz:FILE]` | 分级安装/接管 + 初始化 |
 | `proxy init` | 仅初始化配置 + 钩子（已有二进制） |
 | `proxy start \| stop \| restart` | 启停（nohup 直连二进制；brew 感知：先 `brew services stop`，清外来实例，精确匹配不误杀） |
 | `proxy status` | 运行状态/版本/运行时长/出口节点/活跃连接/累计流量/端口/TUN/代理环境；**控制器 ↓ 时自动诊断**（见故障排查） |
-| `proxy log [-f]` | 日志（`-f` 跟随） |
-| `proxy env on \| off \| show` | 代理环境变量开关（当前 Shell 及新 Shell 自动无感生效，带 0ms 启动开销优化） |
-| `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点：`list` 带序号过滤信息节点；`test` 测全部节点延迟排序后可选号直切；`use` 支持序号/子串(唯一则切，多义弹菜单)/无参交互(fzf 或序号菜单) |
-| `proxy merge list \| add '<RULE>' \| add direct\|proxy\|reject <domain> \| rm '<PAT>' \| diff \| apply` | 前置规则管理（安全，支持快捷语法） |
-| `proxy region list \| apply \| preset \| add <name> ['<regex>'] \| rm \| set` | 地区自动组（支持快捷别名如 HK/SG/US/JP、一键预设与快捷排除） |
+| `proxy log [-f]` | 日志（`-f` 跟随，支持关键字色彩高亮） |
+| `proxy env on \| off \| toggle \| show` | 代理环境变量开关（当前 Shell 及新 Shell 自动无感生效，带 0ms 启动开销优化） |
+| `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点：`list` 带序号且高亮当前节点；`test` 动态进度+色彩分级+fzf直切；`use` 序号/子串/无参交互 |
+| `proxy merge list \| add '<RULE>' \| add direct\|proxy\|reject <domain> \| rm ['<PAT>'] \| diff \| apply` | 前置规则管理（安全，支持无参交互添加/删除） |
+| `proxy region list \| apply \| preset \| add <name> ['<regex>'] \| rm [name] \| set` | 地区自动组（支持快捷别名如 HK/SG/US/JP、一键预设、无参交互删除与排除规则） |
 | `proxy sub add <name> <URL>` | 添加/更新命名订阅 |
-| `proxy sub rm <name> \| list \| show [name]` | 删除 / 列出（活跃标记，token 脱敏）/ 查看 |
-| `proxy sub use <name> [--no-refresh]` | 切换活跃订阅并立即拉取应用 |
+| `proxy sub rm [name] \| list \| show [name]` | 删除（支持交互选择） / 列出（活跃标记，token 脱敏）/ 查看 |
+| `proxy sub use [name] [--no-refresh]` | 切换活跃订阅（支持交互选择）并立即拉取应用 |
 | `proxy sub refresh [name]` | 刷新活跃（或指定）订阅；自动重新前置 merge |
 | `proxy sub set <URL>` | 旧用法：存为 default + 激活 + 拉取 |
 | `proxy tun on \| off` | 透明 TUN（需 sudo/root；不提供不安全的免密用户二进制执行） |
@@ -122,8 +140,8 @@ GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构）
 | `proxy lan on \| off \| status` | allow-lan 开关：局域网设备用本机作代理（持久化，订阅刷新后保留） |
 | `proxy pool on \| off \| status \| refresh` | 节点池模式：全机场节点语义归一化合并 + mihomo fallback 无感自动切换 |
 | `proxy sync export \| import \| push \| pull` | 多端配置同步（merge/region/订阅/可迁移设置，对标 `scripts secret push/pull`） |
-| `proxy check` | 系统代理状态 + 外网连通性 |
-| `proxy doctor` | 环境体检 |
+| `proxy check` | 系统代理状态 + 外网多源连通性与故障诊断建议 |
+| `proxy doctor` | 环境健康体检清单仪表盘 |
 | `proxy upgrade` | 按 install_method 升级 mihomo |
 | `proxy uninstall` | 移除钩子/软链（配置保留） |
 

@@ -11,12 +11,13 @@ MERGE_MARK_END="# <<< local-merge (auto) <<<"
 merge_cmd() {
     local sub=${1:-}; shift || true
     case "$sub" in
-        list)  merge_list "$@" ;;
-        add)   merge_add "$@" ;;
-        rm)    merge_rm "$@" ;;
-        diff)  merge_diff "$@" ;;
-        apply) merge_apply "$@" ;;
-        -h|--help|"") say "用法: proxy merge list | add '<RULE>' | rm '<PAT>' | diff | apply" ;;
+        list|ls) merge_list "$@" ;;
+        add)     merge_add "$@" ;;
+        rm)      merge_rm "$@" ;;
+        diff)    merge_diff "$@" ;;
+        apply)   merge_apply "$@" ;;
+        "")      if [[ -t 0 ]]; then merge_list; else say "用法: proxy merge list | add '<RULE>' | add direct|proxy|reject <domain> | rm '<PAT>' | diff | apply"; fi ;;
+        -h|--help) say "用法: proxy merge list | add '<RULE>' | add direct|proxy|reject <domain> | rm '<PAT>' | diff | apply" ;;
         *) die "proxy merge: 未知子命令 $sub" ;;
     esac
 }
@@ -33,6 +34,27 @@ _merge_rules() {
             if (line !~ /^[[:space:]]*$/) print line
         }
     ' "$MERGE_FILE"
+}
+
+_merge_pick() { # [prompt]
+    local prompt=${1:-"选择规则"}
+    local rules=() r
+    while IFS= read -r r; do
+        [[ -n "$r" ]] && rules+=("$r")
+    done < <(_merge_rules 2>/dev/null)
+    (( ${#rules[@]} > 0 )) || { info "无可用前置规则"; return 1; }
+    if has fzf; then
+        printf '%s\n' "${rules[@]}" | fzf --prompt="$prompt> " --height=40% --reverse --info=inline 2>/dev/null
+    else
+        local i
+        for i in "${!rules[@]}"; do printf '%2d) %s\n' "$((i+1))" "${rules[$i]}" >&2; done
+        local choice
+        printf '%s [#] (q 取消): ' "$prompt" >&2
+        read -r choice </dev/tty 2>/dev/null || return 1
+        [[ "$choice" == q || "$choice" == Q || -z "$choice" ]] && return 1
+        [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#rules[@]} )) || return 1
+        printf '%s' "${rules[$((choice-1))]}"
+    fi
 }
 
 merge_list() {
@@ -65,6 +87,43 @@ PY
 
 merge_add() {
     local rule=$1 target=$2
+    if [[ -z "$rule" && -t 0 ]]; then
+        say "${C_B}添加前置规则:${C_N}"
+        say "  1) 直连 (DIRECT, 如 国内域名 / 局域网服务)"
+        say "  2) 代理 (PROXY, 走默认节点选择组)"
+        say "  3) 拒绝 (REJECT, 如 广告/隐私跟踪域名)"
+        say "  4) 自定义规则 (如 IP-CIDR,192.168.1.0/24,DIRECT)"
+        printf '选择规则类型 [1-4] (q 取消): ' >&2
+        local choice
+        read -r choice </dev/tty 2>/dev/null || return 0
+        case "$choice" in
+            1)
+                printf '输入直连域名后缀 (如 baidu.com): ' >&2
+                read -r target </dev/tty 2>/dev/null || return 0
+                [[ -n "$target" ]] || { info "取消"; return 0; }
+                rule="direct"
+                ;;
+            2)
+                printf '输入代理域名后缀 (如 github.com): ' >&2
+                read -r target </dev/tty 2>/dev/null || return 0
+                [[ -n "$target" ]] || { info "取消"; return 0; }
+                rule="proxy"
+                ;;
+            3)
+                printf '输入拒绝域名后缀 (如 ad.example.com): ' >&2
+                read -r target </dev/tty 2>/dev/null || return 0
+                [[ -n "$target" ]] || { info "取消"; return 0; }
+                rule="reject"
+                ;;
+            4)
+                printf '输入完整规则: ' >&2
+                read -r rule </dev/tty 2>/dev/null || return 0
+                [[ -n "$rule" ]] || { info "取消"; return 0; }
+                target=""
+                ;;
+            *) info "取消"; return 0 ;;
+        esac
+    fi
     if [[ -n "$target" ]]; then
         case "$(printf '%s' "$rule" | tr '[:upper:]' '[:lower:]')" in
             direct|d) rule="DOMAIN-SUFFIX,$target,DIRECT" ;;
@@ -104,6 +163,9 @@ merge_add() {
 
 merge_rm() {
     local pat=$1
+    if [[ -z "$pat" ]]; then
+        pat=$(_merge_pick "选择要删除的前置规则") || { info "取消"; return 0; }
+    fi
     [[ -n "$pat" ]] || die "用法: proxy merge rm '<子串>'  (按子串匹配整行删除)"
     [[ -f "$MERGE_FILE" ]] || die "无 $MERGE_FILE"
     local edit_bak config_bak tmp

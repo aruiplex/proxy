@@ -21,6 +21,7 @@ PROXY_CONF="$CONF_DIR/proxy.conf"
 ENV_STATE="$CONF_DIR/env.state"
 BAK="$CONFIG.bak"
 PID_FILE="$CONF_DIR/mihomo.pid"
+POOL_STATE_DIR="$CONF_DIR/pool-state"
 
 # Repair permissions from older versions that created credential-bearing files
 # under the caller's default umask.

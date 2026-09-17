@@ -92,6 +92,11 @@ svc_start() {
     fi
     if ctrl_get /version >/dev/null 2>&1; then
         ok "已启动 (pid $(svc_pid)), 控制器 http://$(controller_addr) 就绪"
+        local envstate; envstate=$(cat "$ENV_STATE" 2>/dev/null)
+        local tun; tun=$(awk '/^tun:/{f=1} f&&/enable:/{print;exit}' "$CONFIG" 2>/dev/null | grep -o 'true\|false')
+        if [[ "$envstate" != "on" && "$tun" != "true" ]]; then
+            info "💡 提示: 当前代理环境为 off，可运行 proxy on 开启当前终端代理 (或 proxy tun on 开启透明代理)"
+        fi
     else
         warn "进程已起 (pid $(svc_pid)) 但控制器无响应，稍候或查 proxy log"
     fi
@@ -181,42 +186,57 @@ _fmt_bytes() { # <raw bytes> -> human size
 
 svc_status() {
     json_guard
-    local pid up=0 ver etime mport envstate asub tun conns node now
+    local pid up=0 ver etime mport envstate asub tun conns node now is_pool
     pid=$(svc_pid)
     if [[ -n "$pid" ]]; then
         etime=$(ps -p "$pid" -o etime= 2>/dev/null | sed 's/^ *//')
         if ctrl_up; then
             up=1
             ver=$(ctrl_get /version 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('version',''))" 2>/dev/null)
-            ok "运行中 (pid $pid${ver:+ · $ver}${etime:+ · 已运行 $etime})"
+            ok "● 运行中 (pid $pid${ver:+ · $ver}${etime:+ · 运行 $etime})"
         else
-            ok "运行中 (pid $pid${etime:+ · 已运行 $etime})"
+            ok "● 运行中 (pid $pid${etime:+ · 运行 $etime})"
         fi
     else
-        warn "未运行 — 运行 proxy start 启动"
+        warn "○ 未运行 — 运行 proxy start 启动"
     fi
 
-    # exit node + live connections/totals (meaningful only when the controller is up)
+    # exit node (meaningful when the controller is up)
     if (( up )); then
         node=$(node_group 2>/dev/null)
         if [[ -n "$node" ]]; then
             now=$(ctrl_get "/proxies/$(jq_uri "$node")" 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('now',''))" 2>/dev/null)
-            say "  出口节点:  ${now:-?}   (组: $node)"
+            say "  出口节点:  ${now:-?}  ${C_D}(组: $node)${C_N}"
         fi
-        local conns upb down
-        read -r conns upb down < <(ctrl_get /connections 2>/dev/null | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-print(len(d.get('connections') or []), d.get('uploadTotal',0), d.get('downloadTotal',0))" 2>/dev/null)
-        say "  活跃连接:  ${conns:-0}"
-        say "  累计流量:  ↑ $(_fmt_bytes "${upb:-0}") / ↓ $(_fmt_bytes "${down:-0}")"
     fi
 
-    if (( up )); then
-        say "  控制器:    http://$(controller_addr) ↑"
+    # Pool mode vs Single subscription
+    is_pool=$(conf_get pool)
+    if [[ "$is_pool" == "on" ]]; then
+        local sub_files=("$POOL_STATE_DIR"/*.prox)
+        local pool_sub_cnt=0 pool_node_cnt=0
+        if [[ -f "${sub_files[0]}" ]]; then
+            pool_sub_cnt=${#sub_files[@]}
+            pool_node_cnt=$(grep -chE '^[ \t]+- ' "${sub_files[@]}" 2>/dev/null | awk '{s+=$1} END{print s}')
+        fi
+        ok "  订阅模式:  节点池 (pool on · 聚合 ${pool_sub_cnt} 个订阅 / ${pool_node_cnt:-0} 节点)"
     else
-        warn "  控制器:    ↓"
-        _svc_diag
+        asub=$(conf_get active_sub)
+        say "  订阅模式:  单订阅 (${asub:-default})"
+    fi
+
+    envstate=$(cat "$ENV_STATE" 2>/dev/null)
+    if [[ "$envstate" == "on" ]]; then
+        ok "  代理环境:  on (开启)"
+    else
+        info "  代理环境:  off (关闭)"
+    fi
+
+    tun=$(awk '/^tun:/{f=1} f&&/enable:/{print;exit}' "$CONFIG" 2>/dev/null | grep -o 'true\|false')
+    if [[ "$tun" == "true" ]]; then
+        ok "  透明 TUN:  开启"
+    else
+        info "  透明 TUN:  关闭"
     fi
 
     mport=$(awk -F': *' '/^mixed-port:/{print $2;exit}' "$CONFIG" 2>/dev/null)
@@ -224,21 +244,17 @@ print(len(d.get('connections') or []), d.get('uploadTotal',0), d.get('downloadTo
     [[ -z "$mport" ]] && { mport=$(awk -F': *' '/^port:/{print $2;exit}' "$CONFIG" 2>/dev/null); mtype=port; }
     say "  代理端口:  ${mport:-<未设置>} ($mtype)"
 
-    envstate=$(cat "$ENV_STATE" 2>/dev/null)
-    if [[ "$envstate" == "on" ]]; then
-        ok "  代理环境:  on"
+    if (( up )); then
+        say "  控制器:    http://$(controller_addr) ↑"
+        local conns upb down
+        read -r conns upb down < <(ctrl_get /connections 2>/dev/null | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print(len(d.get('connections') or []), d.get('uploadTotal',0), d.get('downloadTotal',0))" 2>/dev/null)
+        say "  连接/流量: 活跃连接 ${conns:-0}  |  累计 ↑ $(_fmt_bytes "${upb:-0}") / ↓ $(_fmt_bytes "${down:-0}")"
     else
-        info "  代理环境:  off"
-    fi
-
-    asub=$(conf_get active_sub)
-    [[ -n "$asub" ]] && say "  订阅:      $asub"
-
-    tun=$(awk '/^tun:/{f=1} f&&/enable:/{print;exit}' "$CONFIG" 2>/dev/null | grep -o 'true\|false')
-    if [[ "$tun" == "true" ]]; then
-        ok "  TUN:       开启 (透明代理)"
-    else
-        info "  TUN:       关闭"
+        warn "  控制器:    ↓"
+        _svc_diag
     fi
 
     local dkr dkr_addr dkr_port
@@ -246,15 +262,29 @@ print(len(d.get('connections') or []), d.get('uploadTotal',0), d.get('downloadTo
     if [[ "$dkr" == on ]]; then
         dkr_addr=$(conf_get docker_listen)
         dkr_port=$(awk -F': *' '/^mixed-port:/{print $2;exit}' "$CONFIG" 2>/dev/null)
-        ok "  Docker:     on → http://${dkr_addr:-172.17.0.1}:${dkr_port:-7890}"
+        ok "  Docker:    on → http://${dkr_addr:-172.17.0.1}:${dkr_port:-7890}"
+    fi
+}
+
+_colorize_log() {
+    if [[ -t 1 ]]; then
+        awk '
+            /\[(ERROR|ERR|FATAL)\]/ { print "\033[1;31m" $0 "\033[0m"; next }
+            /\[(WARN|WARNING)\]/     { print "\033[33m" $0 "\033[0m"; next }
+            /\[(INFO)\]/            { print "\033[36m" $0 "\033[0m"; next }
+            /\[(DEBUG)\]/           { print "\033[2m" $0 "\033[0m"; next }
+            { print }
+        '
+    else
+        cat
     fi
 }
 
 svc_log() {
     [[ -f "$LOG" ]] || die "无日志: $LOG (mihomo 是否启动过?)"
     if [[ "${1:-}" == "-f" || "${1:-}" == "--follow" ]]; then
-        tail -f "$LOG"
+        tail -f "$LOG" | _colorize_log
     else
-        tail -n "${1:-40}" "$LOG"
+        tail -n "${1:-40}" "$LOG" | _colorize_log
     fi
 }

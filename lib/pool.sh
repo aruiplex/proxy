@@ -109,74 +109,79 @@ PY
 
 # --- assemble pool config: normalize names, build groups, emit YAML ---
 _pool_assemble() { # <work-dir> <out-file>
-    python3 - "$1" "$CONFIG" "$REGIONS_FILE" "$2" "$(controller_addr)" "$(conf_get lan)" "$(_region_exclude)" <<'PY'
+    # shellcheck source=region.sh
+    source "$SCRIPT_DIR/lib/region.sh"
+    python3 - "$1" "$CONFIG" "$REGIONS_FILE" "$2" "$(controller_addr)" "$(conf_get lan)" "$(_region_exclude)" "$(_region_interval)" "$(_region_url)" <<'PY'
 import sys, re, os, glob
 
-work, oldconf, regfile, outpath, ctrl, lan, exclude = sys.argv[1:8]
+work, oldconf, regfile, outpath, ctrl, lan, exclude, interval, test_url = sys.argv[1:10]
+interval = interval or '60'
+test_url = test_url or 'http://www.gstatic.com/generate_204'
 
 # ---- country aliases -> canonical region (order matters: first hit wins) ----
 ALIASES = [
-    ('新加坡', [r'singapore', r'\bsg\b', '\U0001F1F8\U0001F1EC', '狮城']),
-    ('香港',   [r'hong ?kong', r'\bhk\b', '\U0001F1ED\U0001F1F0']),
-    ('澳门',   [r'macao', r'\bmo\b', '\U0001F1F2\U0001F1F4']),
-    ('台湾',   [r'taiwan', r'\btw\b', '\U0001F1F9\U0001F1FC', '台北', '台中', '高雄']),
-    ('日本',   [r'japan', r'\bjp\b', '\U0001F1EF\U0001F1F5', '东京', '大阪', '名古屋', '札幌', '冲绳']),
-    ('韩国',   [r'korea', r'\bkr\b', '\U0001F1F0\U0001F1F7', '首尔']),
-    ('美国',   [r'united ?states', r'america', r'\bus\b', r'\busa\b', '\U0001F1FA\U0001F1F8', '美东', '美西', '美']),
-    ('加拿大', [r'canada', r'\bca\b', '\U0001F1E8\U0001F1E6', '温哥华', '多伦多']),
-    ('墨西哥', [r'mexico', r'\bmx\b', '\U0001F1F2\U0001F1FD']),
-    ('巴西',   [r'brazil', r'\bbr\b', '\U0001F1E7\U0001F1F7']),
-    ('阿根廷', [r'argentina', r'\bar\b', '\U0001F1E6\U0001F1F7', '布宜诺']),
-    ('智利',   [r'chile', r'\bcl\b', '\U0001F1E8\U0001F1F1']),
-    ('秘鲁',   [r'peru', r'\bpe\b', '\U0001F1F5\U0001F1EA']),
-    ('哥伦比亚', [r'colombia', r'\bco\b', '\U0001F1E8\U0001F1F4']),
-    ('英国',   [r'united ?kingdom', r'\buk\b', r'\bgb\b', '\U0001F1EC\U0001F1E7', '伦敦', '曼彻斯特']),
-    ('法国',   [r'france', r'\bfr\b', '\U0001F1EB\U0001F1F7', '巴黎']),
-    ('德国',   [r'germany', r'\bde\b', '\U0001F1E9\U0001F1EA', '柏林', '法兰克福']),
-    ('荷兰',   [r'netherlands', r'holland', r'\bnl\b', '\U0001F1F3\U0001F1F1', '阿姆斯特丹']),
-    ('比利时', [r'belgium', r'\bbe\b', '\U0001F1E7\U0001F1EA']),
-    ('瑞士',   [r'swiss', r'switzerland', r'\bch\b', '\U0001F1E8\U0001F1ED']),
-    ('奥地利', [r'austria', r'\bat\b', '\U0001F1E6\U0001F1F9']),
-    ('意大利', [r'italy', r'\bit\b', '\U0001F1EE\U0001F1F9', '米兰', '罗马']),
-    ('西班牙', [r'spain', r'\bes\b', '\U0001F1EA\U0001F1F8', '马德里', '巴塞罗那']),
-    ('葡萄牙', [r'portugal', r'\bpt\b', '\U0001F1F5\U0001F1F9', '里斯本']),
-    ('俄罗斯', [r'russia', r'\bru\b', '\U0001F1F7\U0001F1FA', '莫斯科']),
-    ('乌克兰', [r'ukraine', r'\bua\b', '\U0001F1FA\U0001F1E6']),
-    ('土耳其', [r'turkey', r'turkiye', r'\btr\b', '\U0001F1F9\U0001F1F7', '伊斯坦布尔']),
-    ('阿联酋', [r'uae', r'dubai', r'\bae\b', '\U0001F1E6\U0001F1EA', '迪拜']),
-    ('沙特',   [r'saudi', r'\bsa\b', '\U0001F1F8\U0001F1E6']),
-    ('以色列', [r'israel', r'\bil\b', '\U0001F1EE\U0001F1F1', '特拉维夫']),
-    ('埃及',   [r'egypt', r'\beg\b', '\U0001F1EA\U0001F1EC']),
-    ('南非',   [r'south ?africa', r'\bza\b', '\U0001F1FF\U0001F1E6']),
-    ('澳大利亚', [r'australia', r'\bau\b', '\U0001F1E6\U0001F1FA', '悉尼', '墨尔本']),
-    ('新西兰', [r'new ?zealand', r'\bnz\b', '\U0001F1F3\U0001F1FF', '奥克兰']),
-    ('印度',   [r'india', r'\bin\b', '\U0001F1EE\U0001F1F3', '孟买']),
-    ('印尼',   [r'indonesia', r'indo', r'\bid\b', '\U0001F1EE\U0001F1E9', '雅加达']),
-    ('马来西亚', [r'malaysia', r'\bmy\b', '\U0001F1F2\U0001F1FE', '吉隆坡']),
-    ('菲律宾', [r'philippines', r'\bph\b', '\U0001F1F5\U0001F1ED', '马尼拉']),
-    ('越南',   [r'vietnam', r'\bvn\b', '\U0001F1FB\U0001F1F3', '胡志明', '河内']),
-    ('泰国',   [r'thailand', r'\bth\b', '\U0001F1F9\U0001F1ED', '曼谷']),
-    ('缅甸',   [r'myanmar', r'burma', '\U0001F1F2\U0001F1F2']),
-    ('柬埔寨', [r'cambodia', r'\bkh\b', '\U0001F1F0\U0001F1ED']),
-    ('蒙古',   [r'mongolia', r'\bmn\b', '\U0001F1F2\U0001F1F3']),
-    ('哈萨克', [r'kazakhstan', r'\bkz\b', '\U0001F1F0\U0001F1FF']),
-    ('波兰',   [r'poland', r'\bpl\b', '\U0001F1F5\U0001F1F1']),
-    ('瑞典',   [r'sweden', r'\bse\b', '\U0001F1F8\U0001F1EA', '斯德哥尔摩']),
-    ('挪威',   [r'norway', r'\bno\b', '\U0001F1F3\U0001F1F4', '奥斯陆']),
-    ('芬兰',   [r'finland', r'\bfi\b', '\U0001F1EB\U0001F1EE', '赫尔辛基']),
-    ('丹麦',   [r'denmark', r'\bdk\b', '\U0001F1E9\U0001F1F0', '哥本哈根']),
-    ('捷克',   [r'czech', r'\bcz\b', '\U0001F1E8\U0001F1FF', '布拉格']),
-    ('匈牙利', [r'hungary', r'\bhu\b', '\U0001F1ED\U0001F1FA', '布达佩斯']),
-    ('罗马尼亚', [r'romania', r'\bro\b', '\U0001F1F7\U0001F1F4']),
-    ('希腊',   [r'greece', r'\bgr\b', '\U0001F1EC\U0001F1F7', '雅典']),
-    ('爱尔兰', [r'ireland', r'\bie\b', '\U0001F1EE\U0001F1EA', '都柏林']),
-    ('尼日利亚', [r'nigeria', r'\bng\b', '\U0001F1F3\U0001F1EC']),
+    ('SG', [r'singapore', r'\bsg\b', '\U0001F1F8\U0001F1EC', '新加坡', '狮城']),
+    ('HK', [r'hong ?kong', r'\bhk\b', '\U0001F1ED\U0001F1F0', '香港']),
+    ('MO', [r'macao', r'\bmo\b', '\U0001F1F2\U0001F1F4', '澳门']),
+    ('TW', [r'taiwan', r'\btw\b', '\U0001F1F9\U0001F1FC', '台湾', '台北', '台中', '高雄']),
+    ('JP', [r'japan', r'\bjp\b', '\U0001F1EF\U0001F1F5', '日本', '东京', '大阪', '名古屋', '札幌', '冲绳']),
+    ('KR', [r'korea', r'\bkr\b', '\U0001F1F0\U0001F1F7', '韩国', '首尔']),
+    ('US', [r'united ?states', r'america', r'\bus\b', r'\busa\b', '\U0001F1FA\U0001F1F8', '美国', '美东', '美西', '美']),
+    ('CA', [r'canada', r'\bca\b', '\U0001F1E8\U0001F1E6', '加拿大', '温哥华', '多伦多']),
+    ('MX', [r'mexico', r'\bmx\b', '\U0001F1F2\U0001F1FD', '墨西哥']),
+    ('BR', [r'brazil', r'\bbr\b', '\U0001F1E7\U0001F1F7', '巴西']),
+    ('AR', [r'argentina', r'\bar\b', '\U0001F1E6\U0001F1F7', '阿根廷', '布宜诺']),
+    ('CL', [r'chile', r'\bcl\b', '\U0001F1E8\U0001F1F1', '智利']),
+    ('PE', [r'peru', r'\bpe\b', '\U0001F1F5\U0001F1EA', '秘鲁']),
+    ('CO', [r'colombia', r'\bco\b', '\U0001F1E8\U0001F1F4', '哥伦比亚']),
+    ('UK', [r'united ?kingdom', r'\buk\b', r'\bgb\b', '\U0001F1EC\U0001F1E7', '英国', '伦敦', '曼彻斯特']),
+    ('FR', [r'france', r'\bfr\b', '\U0001F1EB\U0001F1F7', '法国', '巴黎']),
+    ('DE', [r'germany', r'\bde\b', '\U0001F1E9\U0001F1EA', '德国', '柏林', '法兰克福']),
+    ('NL', [r'netherlands', r'holland', r'\bnl\b', '\U0001F1F3\U0001F1F1', '荷兰', '阿姆斯特丹']),
+    ('BE', [r'belgium', r'\bbe\b', '\U0001F1E7\U0001F1EA', '比利时']),
+    ('CH', [r'swiss', r'switzerland', r'\bch\b', '\U0001F1E8\U0001F1ED', '瑞士']),
+    ('AT', [r'austria', r'\bat\b', '\U0001F1E6\U0001F1F9', '奥地利']),
+    ('IT', [r'italy', r'\bit\b', '\U0001F1EE\U0001F1F9', '意大利', '米兰', '罗马']),
+    ('ES', [r'spain', r'\bes\b', '\U0001F1EA\U0001F1F8', '西班牙', '马德里', '巴塞罗那']),
+    ('PT', [r'portugal', r'\bpt\b', '\U0001F1F5\U0001F1F9', '葡萄牙', '里斯本']),
+    ('RU', [r'russia', r'\bru\b', '\U0001F1F7\U0001F1FA', '俄罗斯', '莫斯科']),
+    ('UA', [r'ukraine', r'\bua\b', '\U0001F1FA\U0001F1E6', '乌克兰']),
+    ('TR', [r'turkey', r'turkiye', r'\btr\b', '\U0001F1F9\U0001F1F7', '土耳其', '伊斯坦布尔']),
+    ('AE', [r'uae', r'dubai', r'\bae\b', '\U0001F1E6\U0001F1EA', '阿联酋', '迪拜']),
+    ('SA', [r'saudi', r'\bsa\b', '\U0001F1F8\U0001F1E6', '沙特']),
+    ('IL', [r'israel', r'\bil\b', '\U0001F1EE\U0001F1F1', '以色列', '特拉维夫']),
+    ('EG', [r'egypt', r'\beg\b', '\U0001F1EA\U0001F1EC', '埃及']),
+    ('ZA', [r'south ?africa', r'\bza\b', '\U0001F1FF\U0001F1E6', '南非']),
+    ('AU', [r'australia', r'\bau\b', '\U0001F1E6\U0001F1FA', '澳大利亚', '澳洲', '悉尼', '墨尔本']),
+    ('NZ', [r'new ?zealand', r'\bnz\b', '\U0001F1F3\U0001F1FF', '新西兰', '奥克兰']),
+    ('IN', [r'india', r'\bin\b', '\U0001F1EE\U0001F1F3', '印度', '孟买']),
+    ('ID', [r'indonesia', r'indo', r'\bid\b', '\U0001F1EE\U0001F1E9', '印尼', '印度尼西亚', '雅加达']),
+    ('MY', [r'malaysia', r'\bmy\b', '\U0001F1F2\U0001F1FE', '马来西亚', '大马', '吉隆坡']),
+    ('PH', [r'philippines', r'\bph\b', '\U0001F1F5\U0001F1ED', '菲律宾', '马尼拉']),
+    ('VN', [r'vietnam', r'\bvn\b', '\U0001F1FB\U0001F1F3', '越南', '胡志明', '河内']),
+    ('TH', [r'thailand', r'\bth\b', '\U0001F1F9\U0001F1ED', '泰国', '曼谷']),
+    ('MM', [r'myanmar', r'burma', '\U0001F1F2\U0001F1F2', '缅甸']),
+    ('KH', [r'cambodia', r'\bkh\b', '\U0001F1F0\U0001F1ED', '柬埔寨']),
+    ('MN', [r'mongolia', r'\bmn\b', '\U0001F1F2\U0001F1F3', '蒙古']),
+    ('KZ', [r'kazakhstan', r'\bkz\b', '\U0001F1F0\U0001F1FF', '哈萨克']),
+    ('PL', [r'poland', r'\bpl\b', '\U0001F1F5\U0001F1F1', '波兰']),
+    ('SE', [r'sweden', r'\bse\b', '\U0001F1F8\U0001F1EA', '瑞典', '斯德哥尔摩']),
+    ('NO', [r'norway', r'\bno\b', '\U0001F1F3\U0001F1F4', '挪威', '奥斯陆']),
+    ('FI', [r'finland', r'\bfi\b', '\U0001F1EB\U0001F1EE', '芬兰', '赫尔辛基']),
+    ('DK', [r'denmark', r'\bdk\b', '\U0001F1E9\U0001F1F0', '丹麦', '哥本哈根']),
+    ('CZ', [r'czech', r'\bcz\b', '\U0001F1E8\U0001F1FF', '捷克', '布拉格']),
+    ('HU', [r'hungary', r'\bhu\b', '\U0001F1ED\U0001F1FA', '匈牙利', '布达佩斯']),
+    ('RO', [r'romania', r'\bro\b', '\U0001F1F7\U0001F1F4', '罗马尼亚']),
+    ('GR', [r'greece', r'\bgr\b', '\U0001F1EC\U0001F1F7', '希腊', '雅典']),
+    ('IE', [r'ireland', r'\bie\b', '\U0001F1EE\U0001F1EA', '爱尔兰', '都柏林']),
+    ('NG', [r'nigeria', r'\bng\b', '\U0001F1F3\U0001F1EC', '尼日利亚']),
 ]
 
 def clean(raw):
     n = raw
     n = re.sub(r'[\U0001F1E6-\U0001F1FF]{2}', '', n)        # flag emojis
     n = re.sub(r'[\U0001F000-\U0001FAFF\u2600-\u27BF]', '', n)  # other emojis
+    n = re.sub(r'[\u2700-\u27BF\uFE00-\uFE0F\u1F900-\u1F9FF]', '', n)
     n = n.split('|')[0]                                     # |实验|1倍|V1 suffix
     n = re.sub(r'\[[^\]]*\]', ' ', n)                       # [一倍电信]
     n = re.sub(r'(?i)(cloudfront|telecom|unicom|mobile|experiment|native|ipv6|ipv4|倍率|流量|解锁|家宽|实验|优化|专线|中转|机场|官网|线路|节点)', ' ', n)
@@ -187,7 +192,7 @@ def clean(raw):
 def region_of(cleaned):
     low = cleaned.lower()
     for canon, pats in ALIASES:
-        if canon in low:            # 规范化名本身 (中文机场常直接写 新加坡01)
+        if canon.lower() == low or re.search(r'\b%s\b' % re.escape(canon.lower()), low):
             return canon
         for p in pats:
             try:
@@ -340,12 +345,12 @@ def sq(s):
 group_lines = []
 chain = []
 for g in gorder:
-    gn = '%s-自动' % g
+    gn = '%s-Auto' % g
     chain.append(gn)
     group_lines.append('    - name: %s' % gn)
     group_lines.append('      type: url-test')
-    group_lines.append('      url: http://www.gstatic.com/generate_204')
-    group_lines.append('      interval: 300')
+    group_lines.append('      url: %s' % test_url)
+    group_lines.append('      interval: %s' % interval)
     group_lines.append('      tolerance: 50')
     group_lines.append('      lazy: true')
     group_lines.append('      include-all: true')
@@ -354,12 +359,12 @@ for g in gorder:
         group_lines.append('      exclude-filter: %s' % sq(xre.pattern))
 other_name = None
 if other:
-    other_name = '其他-自动'
+    other_name = 'Other-Auto'
     chain.append(other_name)
     group_lines.append('    - name: %s' % other_name)
     group_lines.append('      type: url-test')
-    group_lines.append('      url: http://www.gstatic.com/generate_204')
-    group_lines.append('      interval: 300')
+    group_lines.append('      url: %s' % test_url)
+    group_lines.append('      interval: %s' % interval)
     group_lines.append('      tolerance: 50')
     group_lines.append('      lazy: true')
     group_lines.append('      proxies:')
@@ -367,20 +372,24 @@ if other:
         group_lines.append('        - %s' % nm)
 
 member = '\n'.join('      - %s' % c for c in chain)
-entry_groups = '\n'.join('        - %s' % c for c in ['🚀 自动'] + chain)
+entry_groups = '\n'.join('        - %s' % c for c in ['AUTO'] + chain)
 
 proxies_section = 'proxies:\n' + ''.join(proxies_out).rstrip('\n') + '\n'
 groups = ['proxy-groups:',
           '    - name: 节点选择',
           '      type: select',
+          '      include-all: true']
+if xre:
+    groups.append('      exclude-filter: %s' % sq(xre.pattern))
+groups.extend([
           '      proxies:',
           entry_groups,
-          '    - name: 🚀 自动',
+          '    - name: AUTO',
           '      type: fallback',
-          '      url: http://www.gstatic.com/generate_204',
-          '      interval: 300',
+          '      url: %s' % test_url,
+          '      interval: %s' % interval,
           '      proxies:',
-          member]
+          member])
 groups.extend(group_lines)
 groups_section = '\n'.join(groups).rstrip('\n') + '\n'
 
@@ -411,7 +420,7 @@ if old.strip():
     rendered = replace_top_section(rendered, 'proxy-groups', groups_section)
     old_groups = set(re.findall(r'(?m)^\s*-\s+name:\s*["\']?(.+?)["\']?\s*$', old))
     old_groups.update(re.findall(r'(?m)^\s*-\s*\{[^}\n]*\bname:\s*["\']?([^,}"\']+)', old))
-    new_groups = {'节点选择', '🚀 自动'} | set(chain)
+    new_groups = {'节点选择', 'AUTO', '🚀 自动'} | set(chain)
     stale_groups = old_groups - new_groups
     if stale_groups:
         ls = rendered.splitlines(keepends=True)
@@ -538,47 +547,91 @@ pool_status() {
     # shellcheck source=region.sh   (REGIONS_FILE 定义在此)
     source "$SCRIPT_DIR/lib/region.sh"
     local mode; mode=$(conf_get pool)
+    say "${C_B}=== 节点池状态 (Pool Mode) ===${C_N}"
     if [[ "$mode" == "on" ]]; then
-        ok "节点池模式: on"
+        ok "  模式状态:    ● on (已开启 · 聚合全部订阅)"
     else
-        info "节点池模式: off (单订阅模型; proxy pool on 开启)"
+        info "  模式状态:    ○ off (单订阅模式; 可运行 proxy pool on 开启)"
         return 0
     fi
     local built; built=$(cat "$POOL_STATE_DIR/.built" 2>/dev/null)
     if [[ -n "$built" ]]; then
-        say "上次构建:  $(date -d @"$built" '+%F %T' 2>/dev/null || echo 未知)"
+        local build_time
+        build_time=$(date -d @"$built" '+%F %T' 2>/dev/null || echo 未知)
+        say "  上次构建:    $build_time"
     fi
-    say "${C_B}订阅节点数:${C_N}"
-    local f
-    for f in "$POOL_STATE_DIR"/*.prox; do
-        [[ -f "$f" ]] || continue
-        printf '  %-18s %s 节点\n' "$(basename "$f" .prox)" "$(grep -cE '^[ \t]+- ' "$f")"
-    done
+
+    # Subscriptions & node counts
+    local sub_files=("$POOL_STATE_DIR"/*.prox)
+    local total_nodes=0 total_subs=0
+    say ""
+    say "  ${C_B}📦 聚合订阅源:${C_N}"
+    if [[ -f "${sub_files[0]}" ]]; then
+        local i=0 n_subs=${#sub_files[@]} f count sub_name branch
+        for f in "${sub_files[@]}"; do
+            [[ -f "$f" ]] || continue
+            i=$((i + 1))
+            total_subs=$((total_subs + 1))
+            sub_name=$(basename "$f" .prox)
+            count=$(grep -cE '^[ \t]+- ' "$f" 2>/dev/null || true)
+            count=${count:-0}
+            total_nodes=$((total_nodes + count))
+            if (( i == n_subs )); then branch="└─"; else branch="├─"; fi
+            printf '    %s %-16s %4s 节点\n' "$branch" "$sub_name" "$count"
+        done
+        printf '    %s %s\n' "  " "${C_D}─────────────────────────${C_N}"
+        printf '    %s %s\n' "  " "共计: ${C_G}${total_subs}${C_N} 个订阅 · ${C_G}${total_nodes}${C_N} 个节点"
+    else
+        info "    (无已缓存的订阅节点，可运行: proxy pool refresh)"
+    fi
+
     if ctrl_up; then
         local g now; g=$(node_group)
         if [[ -n "$g" ]]; then
             now=$(ctrl_get "/proxies/$(jq_uri "$g")" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('now',''))" 2>/dev/null)
-            say "当前出口:  $g → ${now:-?}"
+            say ""
+            say "  ${C_B}🎯 当前出口:${C_N}  $g → ${C_G}${now:-?}${C_N}"
         fi
-        # live state of the pool groups (regions + 其他 + chain)
-        local name
-        while IFS=$'\t' read -r name _; do
-            [[ -n "$name" && "$name" != \#* ]] || continue
-            local enc now cnt
-            enc=$(jq_uri "$name-自动")
-            read -r now cnt < <(ctrl_get "/proxies/$enc" 2>/dev/null | python3 -c "
-import sys,json
-try:
-    d=json.load(sys.stdin)
-    print(d.get('now','-'), len(d.get('all') or []))
-except Exception: print('-', 0)" 2>/dev/null)
-            printf '  %-14s now=%s  (%s 节点)\n' "$name-自动" "$now" "$cnt"
-        done < "$REGIONS_FILE"
-        local enc2 now2
-        enc2=$(jq_uri "其他-自动")
-        now2=$(ctrl_get "/proxies/$enc2" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('now','-'))" 2>/dev/null)
-        [[ -n "$now2" ]] && printf '  %-14s now=%s\n' "其他-自动" "$now2"
+
+        say ""
+        say "  ${C_B}🌐 地区自动测速/故障转移组 (实时状态):${C_N}"
+        python3 - <<'PY'
+import sys, json, urllib.request
+
+def fetch_proxies():
+    try:
+        req = urllib.request.Request("http://127.0.0.1:9090/proxies")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:
+        return {}
+
+d = fetch_proxies()
+proxies = d.get('proxies', {})
+groups = []
+if 'AUTO' in proxies:
+    v = proxies['AUTO']
+    groups.append(('AUTO', v.get('type', ''), v.get('now', '-'), len(v.get('all', []))))
+elif '🚀 自动' in proxies:
+    v = proxies['🚀 自动']
+    groups.append(('AUTO', v.get('type', ''), v.get('now', '-'), len(v.get('all', []))))
+
+for name, v in sorted(proxies.items()):
+    if name in ('AUTO', '🚀 自动', 'GLOBAL', 'DIRECT', 'REJECT', '节点选择'):
+        continue
+    gtype = v.get('type', '')
+    if gtype in ('URLTest', 'Fallback', 'Selector') and (name.endswith('-Auto') or name.endswith('-自动')):
+        groups.append((name, gtype, v.get('now', '-'), len(v.get('all', []))))
+
+n_groups = len(groups)
+for idx, (name, gtype, now, count) in enumerate(groups):
+    branch = '└─' if idx == n_groups - 1 else '├─'
+    cnt_str = f"({count} 地区组)" if name in ('AUTO', '🚀 自动') else f"({count} 节点)"
+    print(f"    {branch} \033[1m{name:<12}\033[0m 当前: \033[32m{now:<14}\033[0m \033[2m{cnt_str}\033[0m")
+PY
     else
-        info "控制器未启动; 仅显示静态状态 (proxy status 诊断)"
+        say ""
+        info "  (控制器未在运行，启动后可查看实时故障转移状态: proxy start)"
     fi
+    say "${C_D}──────────────────────────────────────────${C_N}"
 }

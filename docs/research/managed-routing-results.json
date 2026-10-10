@@ -1,0 +1,51 @@
+{
+  "validated_date": "2026-10-11",
+  "baseline": {
+    "upstream": "MetaCubeX/mihomo",
+    "upstream_tag": "v1.19.32",
+    "source_url": "https://codeload.github.com/MetaCubeX/mihomo/tar.gz/refs/tags/v1.19.32",
+    "source_directory": "mihomo-1.19.32",
+    "source_sha256": "ab130b7fab3893d01aa44c0d39be34a26da716c1d36832fbac9fa054a1d862a0",
+    "patch_sha256": "a3cbc2e5a55d87c5343b0917ccd94cb9ad15789a817603d81c8720c275f24459",
+    "go_toolchain": "go1.27.2",
+    "version": "v1.19.32-adaptive-prototype.2",
+    "build_tags": [],
+    "platform_validated": "linux/amd64",
+    "upstream_commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36"
+  },
+  "management_behavior_tests": {
+    "passed": true,
+    "count": 20
+  },
+  "real_kernel_version_management": {
+    "checks": {
+      "official_binary_and_config_validation": true,
+      "prototype_binary_and_config_validation": true,
+      "explicit_source_switch": true,
+      "official_rollback_restores_version": true
+    },
+    "scope": "temporary loopback-only config and pinned real binaries; no production changes"
+  },
+  "managed_routing": {
+    "checks": {
+      "render_does_not_change_live_config": true,
+      "explicit_direct_rule_preserved": true,
+      "generated_group_routes_real_verified_tls": true,
+      "cli_feedback_changes_next_route": true,
+      "cli_feedback_keeps_healthy_tls_stream": true,
+      "running_activation_refused_without_closing_streams": true,
+      "dial_fault_returns_to_working_route": true,
+      "sibling_tls_streams_survive_dial_fault": true,
+      "refresh_replays_portable_policy": true,
+      "rollback_restores_official_and_original_config": true,
+      "rollback_removes_new_preferences": true
+    },
+    "tls_version": "TLSv1.3",
+    "scope": "temporary managed core, generated policy and verified loopback TLS; no real AI requests"
+  },
+  "additional_checks": {
+    "real_core_generated_yaml_tcp_and_no_resolve": true,
+    "scripts_argument_and_status_forwarding": true
+  },
+  "scope": "Temporary loopback fixtures only; production kernel, subscriptions and application settings untouched."
+}

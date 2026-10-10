@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "enabled": true,
+  "direct_first": true,
+  "preferred_region": "SG",
+  "region_patterns": {
+    "SG": "新加坡|Singapore|(?i:\\bSG\\b)",
+    "JP": "日本|Japan|(?i:\\bJP\\b)",
+    "US": "美国|United States|(?i:\\bUS\\b)"
+  },
+  "max_attempts": 3,
+  "dial_budget": 6000,
+  "attempt_timeout": 2000,
+  "failure_cooldown": 30000,
+  "max_records": 4096
+}

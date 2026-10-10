@@ -3,63 +3,16 @@
 # Install order: detect an existing mihomo first, then download a GitHub release,
 # then fall back to brew. Never assumes the binary already exists.
 
-# Decompress and validate before atomically replacing the destination. Writing
-# directly to a running executable can fail with ETXTBSY, and a failed gunzip
-# must not truncate a previously working binary.
-_install_gz_file() {
-    local gz=$1 bindest=$2 tmp version
-    has gunzip || { warn "缺少依赖: gunzip"; return 1; }
-    mkdir -p "$(dirname "$bindest")"
-    tmp=$(mktemp "${bindest}.tmp.XXXXXX") || { warn "无法创建安装临时文件"; return 1; }
-    if ! gunzip -c -- "$gz" > "$tmp"; then
-        rm -f "$tmp"
-        warn "解压失败: $gz"
-        return 1
-    fi
-    chmod +x "$tmp" || { rm -f "$tmp"; warn "无法设置可执行权限"; return 1; }
-    version=$("$tmp" -v 2>/dev/null) || version=
-    if [[ "$version" != Mihomo\ Meta\ * ]]; then
-        rm -f "$tmp"
-        warn "压缩包不是当前系统可运行的 mihomo: $gz"
-        return 1
-    fi
-    mv -f "$tmp" "$bindest" || { rm -f "$tmp"; warn "无法安装到 $bindest"; return 1; }
-}
-
-# --- tier-3: download the right GitHub asset for this arch/cpu ---
+# The automatic first install resolves a tag once; subsequent upgrades must
+# explicitly choose a version and preserve the recorded source.
 install_github() {
-    local os arch var pat tag ver api asset url bindest tmpgz
-    require python3
-    os=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
-    case "$os" in linux|darwin) ;; *) die "暂不支持自动下载 os=$os; 用 proxy install --bin <path>" ;; esac
-    arch=$(detect_arch)
-    case "$arch" in
-        amd64)
-            var=$(detect_amd64_variant)
-            if [[ "$var" == "v3" ]]; then pat="mihomo-${os}-amd64-v%s.gz"
-            else pat="mihomo-${os}-amd64-compatible-v%s.gz"; fi ;;
-        arm64) pat="mihomo-${os}-arm64-v%s.gz" ;;
-        armv7)
-            [[ "$os" == linux ]] || die "Darwin 不支持 armv7 自动安装"
-            pat="mihomo-linux-armv7-v%s.gz" ;;
-        *) die "暂不支持自动下载 arch=$arch; 用 proxy install --bin <path>" ;;
-    esac
-    info "查询 GitHub 最新 release ..." >&2
-    api=$(curl -fsSL --max-time 20 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null) \
-        || die "无法访问 GitHub API (网络/被墙? 可先设代理或用 --via brew)"
-    tag=$(printf '%s' "$api" | python3 -c "import sys,json;print(json.load(sys.stdin)['tag_name'])" 2>/dev/null)
-    [[ -n "$tag" ]] || die "解析 release tag 失败"
-    ver=${tag#v}; asset=$(printf "$pat" "$ver")
-    url="https://github.com/MetaCubeX/mihomo/releases/download/$tag/$asset"
-    bindest="$HOME/.local/bin/mihomo"
-    tmpgz=$(mktemp "${TMPDIR:-/tmp}/mihomo.gz.XXXXXX") || die "无法创建下载临时文件"
-    info "下载 $url" >&2
-    curl -fSL --max-time 180 -o "$tmpgz" "$url" \
-        || { rm -f "$tmpgz"; die "下载失败"; }
-    _install_gz_file "$tmpgz" "$bindest" \
-        || { rm -f "$tmpgz"; die "mihomo 安装失败"; }
-    rm -f "$tmpgz"
-    printf '%s' "$bindest"
+    source "$SCRIPT_DIR/lib/kernel.sh"
+    local api tag
+    api=$(curl -fsSL --max-time 20 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest) || return 1
+    tag=$(printf '%s' "$api" | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])') || return 1
+    kernel_run prepare --official "$tag" --switch-source >&2 || return 1
+    kernel_run activate >&2 || return 1
+    conf_get bin
 }
 
 # --- tier-2: brew (formula exists in homebrew-core) ---
@@ -72,32 +25,51 @@ install_brew() {
 }
 
 proxy_install() {
-    local via= bin=
+    local via= bin= manifest=
     require python3
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --manifest)
+                [[ $# -ge 2 && -n "$2" ]] || die "--manifest 缺少 FILE"
+                manifest="$2"; shift 2 ;;
             --bin)
                 [[ $# -ge 2 && -n "$2" ]] || die "--bin 缺少 PATH"
                 bin="$2"; shift 2 ;;
             --via)
                 [[ $# -ge 2 && -n "$2" ]] || die "--via 缺少安装方式"
                 via="$2"; shift 2 ;;
-            -h|--help) say "用法: proxy install [--bin PATH] [--via brew|github|gz:FILE]"; return 0 ;;
+            -h|--help) say "用法: proxy install [--manifest FILE] | [--bin PATH] [--via brew|github|gz:FILE]"; return 0 ;;
             *) die "proxy install: 未知参数 $1" ;;
         esac
     done
+    [[ -z "$bin" || -z "$via" ]] || die "--bin 和 --via 不能混用"
     mkdir -p "$CONF_DIR"
 
+    [[ ! -f "$CONF_DIR/kernels/undo.json" ]] || die "内核切换尚未完成；停机后用 kernel status 恢复"
+    if [[ -n "$manifest" ]]; then
+        [[ -z "$bin" && -z "$via" ]] || die "--manifest 不与 --bin/--via 混用"
+        source "$SCRIPT_DIR/lib/kernel.sh"
+        kernel_run prepare --manifest "$manifest" --switch-source || return 1
+        kernel_run activate || return 1
+        proxy_init
+        return
+    fi
+    if [[ -f "$CONF_DIR/kernels/undo.json" ]]; then
+        die "内核切换尚未完成；停机后用 kernel status 恢复"
+    fi
+    if [[ -f "$CONF_DIR/kernels/state.json" ]]; then
+        [[ -z "$bin" && -z "$via" ]] || die "已有版本管理状态；用 kernel prepare [--switch-source] 和 activate 更换内核"
+        proxy_init
+        return
+    fi
     if [[ -n "$bin" ]]; then
-        bin="$(cd -P "$(dirname "$bin")" 2>/dev/null && pwd)/$(basename "$bin")"
-        [[ -x "$bin" ]] || die "指定的二进制不可执行: $bin"
-        [[ "$("$bin" -v 2>/dev/null)" == Mihomo\ Meta\ * ]] || die "指定文件不是可运行的 mihomo: $bin"
-        conf_set bin "$bin"; conf_set install_method manual
+        source "$SCRIPT_DIR/lib/kernel.sh"
+        kernel_run prepare --bin "$bin" --source manual --kind manual --switch-source || return 1
+        kernel_run activate || return 1
     elif [[ "$via" == gz:* ]]; then
-        local gz="${via#gz:}"; [[ -f "$gz" ]] || die "gz 文件不存在: $gz"
-        local bindest="$HOME/.local/bin/mihomo"
-        _install_gz_file "$gz" "$bindest" || die "mihomo 安装失败"
-        conf_set bin "$bindest"; conf_set install_method gz
+        source "$SCRIPT_DIR/lib/kernel.sh"
+        kernel_run prepare --gzip "${via#gz:}" --source gz --kind gz --switch-source || return 1
+        kernel_run activate || return 1
     elif [[ "$via" == brew ]]; then
         local b; b=$(install_brew) || die "brew 安装失败"
         conf_set bin "$b"; conf_set install_method brew
@@ -129,6 +101,13 @@ proxy_install() {
         else
             die "自动安装失败: 无法通过 GitHub 或 Brew 下载安装 mihomo"
         fi
+    fi
+    if [[ ! -f "$CONF_DIR/kernels/state.json" ]]; then
+        source "$SCRIPT_DIR/lib/kernel.sh"
+        local selected method
+        selected=$(conf_get bin); method=$(conf_get install_method)
+        kernel_run prepare --bin "$selected" --source "$method" --kind "$method" || return 1
+        kernel_run activate || return 1
     fi
     proxy_init
 }
@@ -260,18 +239,30 @@ PY
 proxy_doctor() { detect_all; }
 
 proxy_upgrade() {
-    local m; m=$(conf_get install_method)
-    case "$m" in
-        brew) brew upgrade mihomo || die "brew upgrade 失败" ;;
-        github|gz)
-            local b
-            b=$(install_github) || die "GitHub 升级失败"
-            conf_set bin "$b"
-            ;;
-        existing|manual) warn "当前二进制非本工具安装 (method=$m); 用 proxy install --via github 重装" ;;
-        *) die "未知 install_method=$m (先 proxy install)" ;;
-    esac
-    ok "升级流程完成"
+    source "$SCRIPT_DIR/lib/kernel.sh"
+    local manifest= version= state kind
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --manifest|--version)
+                [[ $# -ge 2 && -n "$2" ]] || die "$1 缺少参数"
+                if [[ "$1" == --manifest ]]; then manifest=$2; else version=$2; fi
+                shift 2 ;;
+            -h|--help) say "用法: proxy upgrade --manifest FILE | --version VERSION (只准备同来源版本)"; return ;;
+            *) die "proxy upgrade: 未知参数 $1" ;;
+        esac
+    done
+    [[ -z "$manifest" || -z "$version" ]] || die "--manifest 和 --version 不能同时使用"
+    state=$(kernel_run status) || return 1
+    kind=$(printf '%s' "$state" | python3 -c 'import json,sys;r=json.load(sys.stdin).get("active");print(r["source"]["kind"] if r else "")') || return 1
+    [[ -n "$kind" ]] || die "旧安装尚未纳入版本管理。先 kernel prepare --bin PATH --source ID --kind existing，再停机 activate；不会自动切回官方"
+    if [[ -n "$manifest" ]]; then
+        kernel_run prepare --manifest "$manifest" || return 1
+    elif [[ "$kind" == official && -n "$version" ]]; then
+        kernel_run prepare --official "$version" || return 1
+    else
+        die "请明确版本：官方用 --version VERSION，其他来源用 --manifest FILE；来源切换请用 kernel prepare --switch-source"
+    fi
+    ok "候选版本已准备，运行中的内核未改变。维护时: proxy stop → proxy kernel activate → proxy start"
 }
 
 proxy_uninstall() {

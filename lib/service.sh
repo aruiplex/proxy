@@ -68,6 +68,11 @@ _brew_stop() {
 }
 
 svc_start() {
+    if [[ "${PROXY_KERNEL_START_LOCKED:-}" != 1 ]]; then
+        source "$SCRIPT_DIR/lib/kernel.sh"
+        kernel_start
+        return
+    fi
     require python3
     local bin
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制 (运行 proxy install)"

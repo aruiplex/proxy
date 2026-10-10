@@ -397,3 +397,7 @@ proxy uninstall          # 移除 .bashrc/.zshrc 钩子 + 软链; 配置目录�
 ```
 
 手动：`rm -rf ~/scripts/proxy ~/.local/bin/proxy`；保留或删 `~/.config/mihomo/` 视需要。
+
+## 自动选路与可回退内核管理
+
+实验自动选路的准备、质量查询、目标反馈、版本升级与多机偏好同步见 [使用说明](docs/usage/adaptive-routing.md)。`proxy upgrade` 现在只准备明确版本，不自动启用或改变来源。

@@ -619,6 +619,8 @@ sub_refresh() { (
         die "订阅内容无法解析 (既不是 Clash YAML 也不是节点列表); 配置未改动"
     fi
     _sub_sanitize "$new"
+    source "$SCRIPT_DIR/lib/auto.sh"
+    _adaptive_replay "$new" || return 1
     if ! mihomo_test "$new"; then
         warn "新订阅校验失败, 未替换; 末尾:"
         "$bin" -t -d "$CONF_DIR" -f "$new" 2>&1 | tail -3 >&2

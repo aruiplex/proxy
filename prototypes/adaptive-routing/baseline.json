@@ -1,0 +1,13 @@
+{
+  "upstream": "MetaCubeX/mihomo",
+  "upstream_tag": "v1.19.32",
+  "source_url": "https://codeload.github.com/MetaCubeX/mihomo/tar.gz/refs/tags/v1.19.32",
+  "source_directory": "mihomo-1.19.32",
+  "source_sha256": "ab130b7fab3893d01aa44c0d39be34a26da716c1d36832fbac9fa054a1d862a0",
+  "patch_sha256": "c4b8b9d77a5cb8d7399bcb452423e52f3201882c69be3e07403b35fdbe069ade",
+  "go_toolchain": "go1.27.2",
+  "version": "v1.19.32-adaptive-prototype",
+  "build_tags": [],
+  "platform_validated": "linux/amd64",
+  "upstream_commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36"
+}

@@ -1,0 +1,354 @@
+{
+  "validated_dates": [
+    "2026-10-10",
+    "2026-10-11"
+  ],
+  "baseline": {
+    "upstream": "MetaCubeX/mihomo",
+    "upstream_tag": "v1.19.32",
+    "source_url": "https://codeload.github.com/MetaCubeX/mihomo/tar.gz/refs/tags/v1.19.32",
+    "source_directory": "mihomo-1.19.32",
+    "source_sha256": "ab130b7fab3893d01aa44c0d39be34a26da716c1d36832fbac9fa054a1d862a0",
+    "patch_sha256": "c4b8b9d77a5cb8d7399bcb452423e52f3201882c69be3e07403b35fdbe069ade",
+    "go_toolchain": "go1.27.2",
+    "version": "v1.19.32-adaptive-prototype",
+    "build_tags": [],
+    "platform_validated": "linux/amd64",
+    "upstream_commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36"
+  },
+  "binary_sha256": "55e3fd8b7c1f94a31e736d69f6513edc9fa1ec7a4aa83b167991cd6e282abdc2",
+  "routing_runs": [
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype linux amd64 with go1.27.2 unknown time",
+      "group": "adaptive",
+      "max_failed_times": 5,
+      "failure_scope": "target",
+      "checks": {
+        "baseline_stream_progresses": true,
+        "failed_establishment_retries_and_recovers": true,
+        "healthy_stream_survives_other_dial_failure": true,
+        "failed_dial_observable_for_original_target": true,
+        "candidate_not_repeated_in_establishment": true,
+        "healthy_stream_survives_brief_idle": true,
+        "streams_resume_after_idle": true,
+        "feedback_changes_next_route": true,
+        "feedback_preserves_healthy_siblings": true,
+        "negative_control_detects_explicit_close": true,
+        "closed_lifecycle_observable": true
+      },
+      "observations": {
+        "initial_node": "nodeA",
+        "establishment_seconds": 0.602,
+        "establishment_error": null,
+        "dial_attempts": {
+          "nodeA": 1,
+          "nodeB": 1
+        },
+        "first_connection_still_in_api": true,
+        "quality_event_kinds": [
+          "established",
+          "dial-failed",
+          "established",
+          "feedback",
+          "established",
+          "closed"
+        ],
+        "fixture_errors": {
+          "nodeA": [],
+          "nodeB": []
+        },
+        "blocked_probe_targets": {
+          "nodeA": [],
+          "nodeB": []
+        }
+      },
+      "scope": "local HTTP CONNECT + TCP stream; no real AI requests"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype linux amd64 with go1.27.2 unknown time",
+      "group": "adaptive",
+      "max_failed_times": 5,
+      "failure_scope": "target",
+      "checks": {
+        "baseline_stream_progresses": true,
+        "failed_establishment_retries_and_recovers": true,
+        "healthy_stream_survives_other_dial_failure": true,
+        "failed_dial_observable_for_original_target": true,
+        "candidate_not_repeated_in_establishment": true,
+        "healthy_stream_survives_brief_idle": true,
+        "streams_resume_after_idle": true,
+        "feedback_changes_next_route": true,
+        "feedback_preserves_healthy_siblings": true,
+        "negative_control_detects_explicit_close": true,
+        "closed_lifecycle_observable": true
+      },
+      "observations": {
+        "initial_node": "nodeA",
+        "establishment_seconds": 0.602,
+        "establishment_error": null,
+        "dial_attempts": {
+          "nodeA": 1,
+          "nodeB": 1
+        },
+        "first_connection_still_in_api": true,
+        "quality_event_kinds": [
+          "established",
+          "dial-failed",
+          "established",
+          "feedback",
+          "established",
+          "closed"
+        ],
+        "fixture_errors": {
+          "nodeA": [],
+          "nodeB": []
+        },
+        "blocked_probe_targets": {
+          "nodeA": [],
+          "nodeB": []
+        }
+      },
+      "scope": "local HTTP CONNECT + TCP stream; no real AI requests"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype linux amd64 with go1.27.2 unknown time",
+      "group": "adaptive",
+      "max_failed_times": 5,
+      "failure_scope": "all",
+      "checks": {
+        "baseline_stream_progresses": true,
+        "failed_establishment_retries_and_recovers": true,
+        "healthy_stream_survives_other_dial_failure": true,
+        "failed_dial_observable_for_original_target": true,
+        "candidate_not_repeated_in_establishment": true,
+        "healthy_stream_survives_brief_idle": true,
+        "streams_resume_after_idle": true,
+        "feedback_changes_next_route": true,
+        "feedback_preserves_healthy_siblings": true,
+        "negative_control_detects_explicit_close": true,
+        "closed_lifecycle_observable": true
+      },
+      "observations": {
+        "initial_node": "nodeA",
+        "establishment_seconds": 0.602,
+        "establishment_error": null,
+        "dial_attempts": {
+          "nodeA": 1,
+          "nodeB": 1
+        },
+        "first_connection_still_in_api": true,
+        "quality_event_kinds": [
+          "established",
+          "dial-failed",
+          "established",
+          "feedback",
+          "established",
+          "closed"
+        ],
+        "fixture_errors": {
+          "nodeA": [],
+          "nodeB": []
+        },
+        "blocked_probe_targets": {
+          "nodeA": [],
+          "nodeB": []
+        }
+      },
+      "scope": "local HTTP CONNECT + TCP stream; no real AI requests"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype linux amd64 with go1.27.2 unknown time",
+      "group": "adaptive",
+      "max_failed_times": 5,
+      "failure_scope": "all",
+      "checks": {
+        "baseline_stream_progresses": true,
+        "failed_establishment_retries_and_recovers": true,
+        "healthy_stream_survives_other_dial_failure": true,
+        "failed_dial_observable_for_original_target": true,
+        "candidate_not_repeated_in_establishment": true,
+        "healthy_stream_survives_brief_idle": true,
+        "streams_resume_after_idle": true,
+        "feedback_changes_next_route": true,
+        "feedback_preserves_healthy_siblings": true,
+        "negative_control_detects_explicit_close": true,
+        "closed_lifecycle_observable": true
+      },
+      "observations": {
+        "initial_node": "nodeA",
+        "establishment_seconds": 0.602,
+        "establishment_error": null,
+        "dial_attempts": {
+          "nodeA": 1,
+          "nodeB": 1
+        },
+        "first_connection_still_in_api": true,
+        "quality_event_kinds": [
+          "established",
+          "dial-failed",
+          "established",
+          "feedback",
+          "established",
+          "closed"
+        ],
+        "fixture_errors": {
+          "nodeA": [],
+          "nodeB": []
+        },
+        "blocked_probe_targets": {
+          "nodeA": [],
+          "nodeB": []
+        }
+      },
+      "scope": "local HTTP CONNECT + TCP stream; no real AI requests"
+    }
+  ],
+  "extra_runs": [
+    {
+      "region": {
+        "checks": {
+          "same_region_before_cross_region": true,
+          "cross_region_after_local_candidates_fail": true,
+          "all_established_streams_survive": true
+        },
+        "observations": {
+          "same_region_attempts": {
+            "nodeA": 1,
+            "nodeC": 0,
+            "nodeB": 1
+          },
+          "cross_region_attempts": {
+            "nodeA": 0,
+            "nodeC": 1,
+            "nodeB": 1
+          }
+        }
+      },
+      "refused_budget": {
+        "checks": {
+          "bounded_failure_returned": true,
+          "one_attempt_per_candidate_and_max_two": true,
+          "outer_retry_does_not_restart_budget": true,
+          "healthy_stream_survives_exhaustion": true
+        },
+        "observations": {
+          "attempts": {
+            "nodeA": 1,
+            "nodeC": 1,
+            "nodeB": 0
+          },
+          "dial_seconds": 0.009,
+          "configured_budget_ms": 250,
+          "stalled": false
+        }
+      },
+      "stalled_budget": {
+        "checks": {
+          "bounded_failure_returned": true,
+          "one_attempt_per_candidate_and_max_two": true,
+          "outer_retry_does_not_restart_budget": true,
+          "healthy_stream_survives_exhaustion": true
+        },
+        "observations": {
+          "attempts": {
+            "nodeA": 1,
+            "nodeC": 1,
+            "nodeB": 0
+          },
+          "dial_seconds": 0.253,
+          "configured_budget_ms": 250,
+          "stalled": true
+        }
+      }
+    },
+    {
+      "region": {
+        "checks": {
+          "same_region_before_cross_region": true,
+          "cross_region_after_local_candidates_fail": true,
+          "all_established_streams_survive": true
+        },
+        "observations": {
+          "same_region_attempts": {
+            "nodeA": 1,
+            "nodeC": 0,
+            "nodeB": 1
+          },
+          "cross_region_attempts": {
+            "nodeA": 0,
+            "nodeC": 1,
+            "nodeB": 1
+          }
+        }
+      },
+      "refused_budget": {
+        "checks": {
+          "bounded_failure_returned": true,
+          "one_attempt_per_candidate_and_max_two": true,
+          "outer_retry_does_not_restart_budget": true,
+          "healthy_stream_survives_exhaustion": true
+        },
+        "observations": {
+          "attempts": {
+            "nodeA": 1,
+            "nodeC": 1,
+            "nodeB": 0
+          },
+          "dial_seconds": 0.009,
+          "configured_budget_ms": 250,
+          "stalled": false
+        }
+      },
+      "stalled_budget": {
+        "checks": {
+          "bounded_failure_returned": true,
+          "one_attempt_per_candidate_and_max_two": true,
+          "outer_retry_does_not_restart_budget": true,
+          "healthy_stream_survives_exhaustion": true
+        },
+        "observations": {
+          "attempts": {
+            "nodeA": 1,
+            "nodeC": 1,
+            "nodeB": 0
+          },
+          "dial_seconds": 0.251,
+          "configured_budget_ms": 250,
+          "stalled": true
+        }
+      }
+    }
+  ],
+  "go_tests": {
+    "adaptive_race": {
+      "passed": true,
+      "tests": 10
+    },
+    "related_packages": {
+      "passed": true
+    },
+    "upstream": {
+      "passed": true,
+      "flags": "-timeout 90s",
+      "environment_unset": [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy"
+      ],
+      "environment": {
+        "SKIP_INTEROP_TEST": "true",
+        "SKIP_CONCURRENT_TEST": "true"
+      },
+      "baseline_reproduced_environment_failure": "TestHTTPMaskTunnel_Stream_TCPRoundTrip: 502 Bad Gateway with inherited proxy variables"
+    }
+  },
+  "build_checks": {
+    "matching_clean_builds": true,
+    "inside_parent_checkout_isolated": true,
+    "existing_output_refused": true,
+    "corrupt_source_refused": true
+  }
+}

@@ -8,11 +8,12 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'libexec'))
-from kernel_manager import Manager, host_platform
+from kernel_manager import KernelError, Manager, host_platform, official_manifest
 
 
 class KernelManagement(unittest.TestCase):
@@ -230,6 +231,31 @@ elif '-t' in sys.argv:
             self.prepare(success=False)
         self.assertFalse((self.home / 'mihomo.pid').exists())
         self.assertIsNone(self.state()['active'])
+
+    def test_release_tag_accepts_old_numeric_version_display(self):
+        release = self.release('1.19.29')
+        manifest = json.loads(release.read_text()); manifest['version'] = 'v1.19.29'
+        release.write_text(json.dumps(manifest))
+        self.prepare(release); self.activate()
+        self.assertEqual(self.state()['active']['version'], 'v1.19.29')
+        self.assertIn('Mihomo Meta 1.19.29 ', self.state()['active']['actual_version'])
+
+    def test_official_metadata_fallback_keeps_tag_and_requires_asset_digest(self):
+        hp = host_platform(); variant = '-compatible' if hp['arch'] == 'amd64' else ''
+        asset = f"mihomo-{hp['os']}-{hp['arch']}{variant}-v1.19.32.gz"
+        data = {'tag_name': 'v1.19.32', 'assets': [{'name': asset, 'digest': 'sha256:'+'a'*64,
+                 'browser_download_url': 'https://github.com/MetaCubeX/mihomo/releases/download/v1.19.32/'+asset}]}
+        with patch('kernel_manager.request', side_effect=KernelError('anonymous quota exhausted')), patch('kernel_manager.shutil.which', return_value='/fixture/gh'), patch('kernel_manager.subprocess.run') as run:
+            run.return_value = subprocess.CompletedProcess([], 0, json.dumps(data), '')
+            manifest = official_manifest('v1.19.32')
+            self.assertEqual(manifest['asset']['sha256'], 'a'*64)
+            self.assertEqual(run.call_args.args[0], ['gh', 'api', 'repos/MetaCubeX/mihomo/releases/tags/v1.19.32'])
+            data['tag_name'] = 'v-other'
+            run.return_value = subprocess.CompletedProcess([], 0, json.dumps(data), '')
+            with self.assertRaises(KernelError): official_manifest('v1.19.32')
+            data['tag_name'] = 'v1.19.32'; data['assets'][0]['digest'] = ''
+            run.return_value = subprocess.CompletedProcess([], 0, json.dumps(data), '')
+            with self.assertRaises(KernelError): official_manifest('v1.19.32')
 
     def test_missing_managed_binary_never_falls_back_to_path(self):
         self.prepare(); self.activate()

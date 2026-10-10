@@ -129,8 +129,22 @@ def official_manifest(tag):
     # Prefer the compatible amd64 asset rather than guessing CPU feature flags.
     variant = '-compatible' if hp['arch'] == 'amd64' else ''
     asset_name = f"mihomo-{hp['os']}-{hp['arch']}{variant}-{tag}.gz"
-    with request(f'https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/{tag}') as response:
-        release = json.load(response)
+    api_path = f'repos/MetaCubeX/mihomo/releases/tags/{tag}'
+    try:
+        with request('https://api.github.com/' + api_path) as response:
+            release = json.load(response)
+    except KernelError:
+        # Shared networks often exhaust the anonymous GitHub API limit. Reuse
+        # an already authenticated gh installation without reading its secrets.
+        if not shutil.which('gh'):
+            raise KernelError('GitHub API 不可达或匿名额度耗尽；可使用已登录的 gh，或提供本地 manifest') from None
+        try:
+            result = subprocess.run(['gh', 'api', api_path], capture_output=True, text=True, timeout=30, check=True)
+            release = json.loads(result.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            raise KernelError('GitHub 发行信息获取失败；请提供本地 manifest') from None
+    if release.get('tag_name') != tag:
+        raise KernelError('发行信息与指定 tag 不匹配')
     for asset in release.get('assets', []):
         if asset.get('name') == asset_name:
             checksum = asset.get('digest', '')
@@ -272,7 +286,13 @@ class Manager:
                 shutil.copyfile(downloaded, binary)
             binary.chmod(0o700)
             actual = version(binary)
-            if actual.split()[2] != manifest['version']:
+            label = actual.split()[2]
+            declared = manifest['version']
+            # Older official builds display 1.x.y while their release tag uses v1.x.y.
+            same_release = (re.fullmatch(r'v?\d+\.\d+\.\d+', label)
+                            and re.fullmatch(r'v?\d+\.\d+\.\d+', declared)
+                            and label.lstrip('v') == declared.lstrip('v'))
+            if label != declared and not same_release:
                 raise KernelError('二进制实际版本与 manifest 不匹配')
             candidate = directory / 'config.yaml'
             chosen = Path(config) if config else self.root / 'config.yaml'

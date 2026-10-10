@@ -15,7 +15,7 @@
   },
   "management_behavior_tests": {
     "passed": true,
-    "count": 20
+    "count": 22
   },
   "real_kernel_version_management": {
     "checks": {
@@ -45,7 +45,8 @@
   },
   "additional_checks": {
     "real_core_generated_yaml_tcp_and_no_resolve": true,
-    "scripts_argument_and_status_forwarding": true
+    "scripts_argument_and_status_forwarding": true,
+    "official_fixed_tag_authenticated_metadata_fallback": true
   },
   "scope": "Temporary loopback fixtures only; production kernel, subscriptions and application settings untouched."
 }

@@ -8,7 +8,10 @@
 install_github() {
     source "$SCRIPT_DIR/lib/kernel.sh"
     local api tag
-    api=$(curl -fsSL --max-time 20 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest) || return 1
+    api=$(curl -fsSL --max-time 20 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest) || {
+        has gh || return 1
+        api=$(gh api repos/MetaCubeX/mihomo/releases/latest) || return 1
+    }
     tag=$(printf '%s' "$api" | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])') || return 1
     kernel_run prepare --official "$tag" --switch-source >&2 || return 1
     kernel_run activate >&2 || return 1

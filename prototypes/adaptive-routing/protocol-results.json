@@ -1,0 +1,339 @@
+{
+  "validated_date": "2026-10-11",
+  "baseline": {
+    "upstream": "MetaCubeX/mihomo",
+    "upstream_tag": "v1.19.32",
+    "source_url": "https://codeload.github.com/MetaCubeX/mihomo/tar.gz/refs/tags/v1.19.32",
+    "source_directory": "mihomo-1.19.32",
+    "source_sha256": "ab130b7fab3893d01aa44c0d39be34a26da716c1d36832fbac9fa054a1d862a0",
+    "patch_sha256": "a3cbc2e5a55d87c5343b0917ccd94cb9ad15789a817603d81c8720c275f24459",
+    "go_toolchain": "go1.27.2",
+    "version": "v1.19.32-adaptive-prototype.2",
+    "build_tags": [],
+    "platform_validated": "linux/amd64",
+    "upstream_commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36"
+  },
+  "client_binary_sha256": "f0855bee201f2e405e8526912397074ce26c36e2488403cdfa711a947a42c38b",
+  "server": {
+    "upstream": "MetaCubeX/mihomo",
+    "tag": "v1.19.32",
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026",
+    "build_tags": [
+      "with_gvisor"
+    ],
+    "binary_sha256": "7a0d59da2e678d56c899a3db996a2ad8963286c4f3634b0451435db248f13fa1"
+  },
+  "runs": [
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "ss",
+      "failure_mode": "refuse",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "dial-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vmess",
+      "failure_mode": "refuse",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "dial-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vmess-tls",
+      "failure_mode": "refuse",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "dial-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vless",
+      "failure_mode": "refuse",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "dial-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vless-tls",
+      "failure_mode": "refuse",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "dial-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "trojan",
+      "failure_mode": "refuse",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "dial-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vmess-ws-early",
+      "failure_mode": "refuse",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "dial-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vless-ws-early",
+      "failure_mode": "refuse",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "dial-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vmess-ws-early",
+      "failure_mode": "ws-reject",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "deferred_handshake_failed_before_payload": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "handshake-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vless-ws-early",
+      "failure_mode": "ws-reject",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "deferred_handshake_failed_before_payload": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "handshake-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vmess-ws-early",
+      "failure_mode": "ws-reject",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "deferred_handshake_failed_before_payload": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "handshake-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    },
+    {
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
+      "protocol": "vless-ws-early",
+      "failure_mode": "ws-reject",
+      "checks": {
+        "tls_stream_uses_verified_fixture_certificate": true,
+        "failed_establishment_uses_backup": true,
+        "healthy_tls_stream_survives_failure": true,
+        "failed_route_observed_once": true,
+        "deferred_handshake_failed_before_payload": true,
+        "feedback_changes_next_tls_route": true,
+        "feedback_keeps_both_healthy_tls_streams": true,
+        "first_packet_business_operation_not_replayed": true,
+        "business_operation_not_replayed_after_response_loss": true,
+        "business_failure_preserves_healthy_tls_streams": true
+      },
+      "observations": {
+        "failure_reasons": [
+          "handshake-error"
+        ],
+        "commits_after_response_loss": 1,
+        "first_packet_commits": 1,
+        "tls_version": "TLSv1.3"
+      },
+      "scope": "loopback two-core protocol fixture + certificate-verified TLS origin; no real AI service"
+    }
+  ],
+  "summary": {
+    "protocol_combinations": 8,
+    "runs": 12,
+    "checks": 112,
+    "all_checks_passed": true
+  },
+  "scope": "Only loopback fixtures and temporary verified TLS certificates; no subscription, real AI request or production kernel replacement. UDP/QUIC/TUN, Reality/Vision and multiplexing combinations remain unverified."
+}

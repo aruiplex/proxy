@@ -38,7 +38,7 @@ proxy-groups:
 - `POST /proxies/AUTO/feedback`：请求体为 `{"target":"example.com:443","reason":"timeout"}`。反馈该目标最近实际建立的线路，之后重新自动选择；不会指定或固定节点，也不关闭现有连接。
 - `reason` 接受 `unknown`、`timeout`、`disconnect`、`unusable`。目标键应从 quality 返回值选择；未观察到或已被容量淘汰的目标返回 400。
 
-这里的成功表示 TCP/代理隧道建立成功。加密业务请求是否成功仍为未知。EOF、主动关闭和调用方设置的超时不直接当作坏节点；已知传输错误会记录为目标/节点证据，但不推断根因。底层超时无法区分来源时只记录 `transport-timeout-unknown`。关闭观测是关闭调用时的累计值，不能作为完整审计日志；有限事件窗口可轮转。
+`established` 表示出站 `DialContext` 及所需协议头写入完成。有些协议不确认远端目标连接，这个事件不代表目标一定已连通。加密业务请求是否成功仍为未知。EOF、主动关闭和调用方设置的超时不直接当作坏节点；已知传输错误会记录为目标/节点证据，但不推断根因。底层超时无法区分来源时只记录 `transport-timeout-unknown`。关闭观测是关闭调用时的累计值，不能作为完整审计日志；有限事件窗口可轮转。
 
 ## 可复现构建
 
@@ -67,13 +67,30 @@ python3 tests/integration/adaptive_checks.py --kernel /tmp/mihomo-adaptive
 
 2026-10-10 至 2026-10-11 在隔离环境完成：
 
-- 10 个 Go 行为测试通过 `-race`，覆盖目标隔离、地区优先、冷却恢复、独立主机证据、反馈保留连接、事件轮转、容量、并发、传输重置、主动取消、DIRECT 约束和延迟握手保护。
+- 14 个 Go 行为测试通过 `-race`，覆盖目标隔离、地区优先、冷却恢复、独立主机证据、反馈保留连接、事件轮转、容量、并发、传输重置、主动取消、DIRECT 约束和延迟握手保护。
 - 真实内核的目标故障、整节点故障各运行两次，每次 11 项检查全部通过：坏节点 1 次、备用节点 1 次；反馈和短暂空闲均保留健康流。
 - 三候选地区、立即拒绝和握手停滞场景各运行两次：先同地区，必要时跨区；最多两个候选；250 毫秒总预算下握手停滞约 251 毫秒返回，外层没有重复尝试；原有流保留。
 - 新目录重建及补丁摘要校验通过；关闭 VCS 自动元数据后，两次干净构建的二进制 SHA-256 一致。结果保存在 `results.json`。
 - 上游 `go test ./... -timeout 90s` 在清除 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 及其小写形式，并设置 `SKIP_INTEROP_TEST=true SKIP_CONCURRENT_TEST=true` 后通过。首次继承代理环境时 Sudoku HTTPMask 测试返回 502，未打补丁的原版同样复现；清除代理变量后该测试通过。互操作及压力测试未宣称通过。
 
-原型只支持在 `DialContext` 内完成握手的 TCP 出站。遇到延迟握手连接会关闭这个尚未发送业务数据的候选，记录 `unsupported`，尝试下一候选；不会将协议不支持当作线路失败。UDP 不支持。SS/VMess/Trojan 等实际协议组合、真实 AI/TLS 请求、QUIC、TUN、长时间空闲、跨机器状态及历史持久化尚未验证，不能据此部署替换日常内核。
+延迟握手现在会在同一个候选预算内执行 `Write(nil)`，只发送协议头，不传入应用数据；用 context 取消与临时 deadline 限制它的耗时，完成后清除临时 deadline。仍不能完成握手的连接记录为 `unsupported`，不会将协议不支持当作线路失败。已发送业务数据后，不会在内核中重复请求。原型也不读取返回内容来判断加密业务是否成功。
+
+当前固定构建版本为 `v1.19.32-adaptive-prototype.2`。SS aes-128-gcm、VMess TCP/TLS、VLESS TCP/TLS、Trojan TLS、VMess/VLESS WebSocket early-data 共 8 种组合通过双内核夹具。VLESS 明文传输仅限回环测试，并显式设置 `allow-insecure`；每种组合内承载的业务流均使用证书验证的 TLS 1.3。Trojan、VMess TLS 和 VLESS TLS 的代理 TLS 层也验证了测试证书摘要。
+
+12 次协议运行（8 个连接拒绝场景，以及两种 WebSocket 的握手拒绝场景各两次）检查：建立故障换线、已有 TLS 流保留、目标反馈不关闭其他健康流、响应丢失后业务操作只提交一次。POST 同时覆盖 TLS 中已建立的连接，以及与 CONNECT 合并发送、提前进入首次 peek 缓冲区的明文请求。服务端先记录操作再丢弃响应，避免把“从未发出请求”误判成“不重放”。稳定结果见 `protocol-results.json`。
+
+协议复验需要同样固定的官方服务端内核，以及 OpenSSL CLI 用来生成一次性测试证书；不使用真实凭据和订阅。服务端规则只允许回环目标的三个夹具端口，其余目标 REJECT。
+
+```bash
+python3 tests/integration/protocol_probe.py \
+  --kernel /tmp/mihomo-adaptive --server-kernel /path/to/official-v1.19.32 \
+  --protocol trojan
+python3 tests/integration/protocol_probe.py \
+  --kernel /tmp/mihomo-adaptive --server-kernel /path/to/official-v1.19.32 \
+  --protocol vmess-ws-early --failure-mode ws-reject
+```
+
+UDP、QUIC、TUN、长时间空闲、Reality/Vision、其他插件/多路复用组合、跨机器状态、历史持久化及真实 Codex/Antigravity 业务尚未验证。部分协议没有目标连接确认，因此响应期失败仍可能需要应用重新建立连接；不能承诺将已中断的连接无缝迁移或重复请求。这些限制与待完成的内核来源管理意味着原型仍不能直接替换日常内核。
 
 ## 之后如何同步上游
 

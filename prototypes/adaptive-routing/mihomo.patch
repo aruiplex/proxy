@@ -1,9 +1,9 @@
 diff --git a/adapter/outboundgroup/adaptive.go b/adapter/outboundgroup/adaptive.go
 new file mode 100644
-index 0000000..352f2a9
+index 0000000..3a3680a
 --- /dev/null
 +++ b/adapter/outboundgroup/adaptive.go
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,505 @@
 +package outboundgroup
 +
 +import (
@@ -28,7 +28,7 @@ index 0000000..352f2a9
 +
 +// Adaptive is an experimental TCP establishment policy. It never migrates or
 +// closes another connection. Each candidate gets one attempt before payload.
-+// UDP and lazy handshakes are intentionally unsupported in this prototype.
++// UDP and handshakes that cannot finish without payload remain unsupported.
 +type Adaptive struct {
 +	*GroupBase
 +	opt      AdaptiveOption
@@ -260,17 +260,28 @@ index 0000000..352f2a9
 +		a.record(target, p.Name()).Dials++
 +		a.mu.Unlock()
 +		conn, err := p.DialContext(attempt, m)
-+		// Check cancellation even when a noncompliant adapter returns a connection.
++		phase := "dial-error"
++		// With a dial error the adapter owns cleanup and the returned connection
++		// is undefined (some adapters wrap a nil transport). Do not use it.
++		if err != nil {
++			conn = nil
++		}
 +		if err == nil {
 +			err = attempt.Err()
 +		}
-+		stop()
++		if err == nil && conn == nil {
++			err = errors.New("adapter returned a nil connection")
++		}
 +		if err == nil && N.NeedHandshake(conn) {
++			phase = "handshake-error"
++			err = primeAdaptiveHandshake(attempt, conn)
++		}
++		stop()
++		if errors.Is(err, errAdaptiveNeedsPayload) {
 +			_ = conn.Close()
-+			conn = nil
-+			last = errors.New("lazy handshake unsupported; no business data written")
++			last = err
 +			a.mu.Lock()
-+			a.event(adaptiveEvent{Target: target, Node: p.Name(), Kind: "unsupported", Reason: "lazy-handshake"})
++			a.event(adaptiveEvent{Target: target, Node: p.Name(), Kind: "unsupported", Reason: "handshake-needs-payload"})
 +			a.mu.Unlock()
 +			continue
 +		}
@@ -286,7 +297,7 @@ index 0000000..352f2a9
 +			a.mu.Lock()
 +			r := a.record(target, p.Name())
 +			r.Failures++
-+			r.Reason = "dial-error"
++			r.Reason = phase
 +			r.Until = a.now().Add(time.Duration(a.opt.Cooldown) * time.Millisecond)
 +			a.event(adaptiveEvent{Target: target, Node: p.Name(), Kind: "dial-failed", Reason: r.Reason})
 +			a.mu.Unlock()
@@ -309,6 +320,39 @@ index 0000000..352f2a9
 +		last = ctx.Err()
 +	}
 +	return nil, adaptiveExhausted{fmt.Errorf("adaptive establishment exhausted: %w", last)}
++}
++
++// An adapter has received destination metadata only, so an empty write can
++// transmit protocol headers but never application bytes. This happens before
++// handing the connection to the tunnel, inside the existing attempt budget.
++var errAdaptiveNeedsPayload = errors.New("adaptive: handshake cannot finish without payload")
++
++func primeAdaptiveHandshake(ctx context.Context, conn C.Conn) (err error) {
++	done := N.SetupContextForConn(ctx, conn)
++	defer done(&err)
++	if err = ctx.Err(); err != nil {
++		return
++	}
++	if deadline, ok := ctx.Deadline(); ok {
++		if err = conn.SetDeadline(deadline); err != nil {
++			return
++		}
++	}
++	n, writeErr := conn.Write(nil)
++	if writeErr != nil {
++		return writeErr
++	}
++	if n != 0 {
++		return errors.New("adapter returned bytes for an empty handshake write")
++	}
++	if N.NeedHandshake(conn) {
++		return errAdaptiveNeedsPayload
++	}
++	if err = ctx.Err(); err != nil {
++		return
++	}
++	// Remove the temporary handshake deadline before business traffic begins.
++	return conn.SetDeadline(time.Time{})
 +}
 +
 +// Feedback is scoped to the actual last established node for this target.
@@ -467,10 +511,10 @@ index 0000000..352f2a9
 +}
 diff --git a/adapter/outboundgroup/adaptive_test.go b/adapter/outboundgroup/adaptive_test.go
 new file mode 100644
-index 0000000..7b6e55e
+index 0000000..8eed0f9
 --- /dev/null
 +++ b/adapter/outboundgroup/adaptive_test.go
-@@ -0,0 +1,396 @@
+@@ -0,0 +1,489 @@
 +package outboundgroup
 +
 +import (
@@ -509,6 +553,9 @@ index 0000000..7b6e55e
 +	mu             sync.Mutex
 +	writes, closes int
 +	lazy           bool
++	primeable      bool
++	writeSizes     []int
++	writeError     error
 +	readError      error
 +}
 +
@@ -518,6 +565,13 @@ index 0000000..7b6e55e
 +	c.mu.Lock()
 +	defer c.mu.Unlock()
 +	c.writes++
++	c.writeSizes = append(c.writeSizes, len(p))
++	if c.writeError != nil {
++		return 0, c.writeError
++	}
++	if c.primeable && len(p) == 0 {
++		c.lazy = false
++	}
 +	return len(p), nil
 +}
 +func (c *adaptiveTestConn) Close() error                  { c.mu.Lock(); defer c.mu.Unlock(); c.closes++; return nil }
@@ -669,7 +723,7 @@ index 0000000..7b6e55e
 +		t.Fatal(err)
 +	}
 +	c.Close()
-+	if lazy.writes != 0 || lazy.closes != 1 {
++	if lazy.writes != 1 || len(lazy.writeSizes) != 1 || lazy.writeSizes[0] != 0 || lazy.closes != 1 {
 +		t.Fatalf("unsafe handshake: writes=%d closes=%d", lazy.writes, lazy.closes)
 +	}
 +	for _, r := range g.Snapshot().(map[string]any)["records"].([]adaptiveRecord) {
@@ -865,6 +919,89 @@ index 0000000..7b6e55e
 +	}
 +	if err := g.Feedback("older.test:443", "unknown"); err != nil {
 +		t.Fatalf("feedback incorrectly depended on finite event log: %v", err)
++	}
++}
++
++func TestAdaptivePrimesLazyHandshakeBeforePayload(t *testing.T) {
++	raw := &adaptiveTestConn{lazy: true, primeable: true}
++	g := adaptiveTestGroup(t, AdaptiveOption{}, adaptiveTestNode("lazy", func(context.Context, *C.Metadata) (C.Conn, error) { return raw, nil }))
++	c, err := g.DialContext(context.Background(), adaptiveTestMetadata("lazy.test"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if raw.lazy || len(raw.writeSizes) != 1 || raw.writeSizes[0] != 0 {
++		t.Fatalf("handshake was not primed without payload: %+v", raw.writeSizes)
++	}
++	c.Write([]byte("once"))
++	c.Close()
++	if !reflect.DeepEqual(raw.writeSizes, []int{0, 4}) {
++		t.Fatalf("business payload replayed or put into handshake: %v", raw.writeSizes)
++	}
++}
++
++func (c *adaptiveTestConn) SetDeadline(time.Time) error { return nil }
++
++func TestAdaptiveEmptyHandshakeFailureUsesBackup(t *testing.T) {
++	raw := &adaptiveTestConn{lazy: true, writeError: syscall.ECONNRESET}
++	g := adaptiveTestGroup(t, AdaptiveOption{}, adaptiveTestNode("A", func(context.Context, *C.Metadata) (C.Conn, error) { return raw, nil }), adaptiveTestNode("B", adaptiveTestOK))
++	c, err := g.DialContext(context.Background(), adaptiveTestMetadata("handshake.test"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	c.Close()
++	if !reflect.DeepEqual(raw.writeSizes, []int{0}) {
++		t.Fatalf("sent payload to failed handshake: %v", raw.writeSizes)
++	}
++	record := g.Snapshot().(map[string]any)["records"].([]adaptiveRecord)[0]
++	if record.Node != "A" || record.Failures != 1 || record.Reason != "handshake-error" {
++		t.Fatalf("missing handshake failure evidence: %+v", record)
++	}
++}
++
++type adaptiveBlockingPrime struct {
++	adaptiveTestConn
++	stopped chan struct{}
++	once    sync.Once
++}
++
++func (c *adaptiveBlockingPrime) Write(p []byte) (int, error) {
++	c.mu.Lock()
++	c.writeSizes = append(c.writeSizes, len(p))
++	c.mu.Unlock()
++	<-c.stopped
++	return 0, net.ErrClosed
++}
++func (c *adaptiveBlockingPrime) Close() error {
++	c.once.Do(func() { close(c.stopped) })
++	return c.adaptiveTestConn.Close()
++}
++
++func TestAdaptiveHandshakeStallHonorsAttemptBudget(t *testing.T) {
++	raw := &adaptiveBlockingPrime{adaptiveTestConn: adaptiveTestConn{lazy: true}, stopped: make(chan struct{})}
++	g := adaptiveTestGroup(t, AdaptiveOption{DialBudget: 200, AttemptTimeout: 40}, adaptiveTestNode("A", func(context.Context, *C.Metadata) (C.Conn, error) { return raw, nil }), adaptiveTestNode("B", adaptiveTestOK))
++	start := time.Now()
++	c, err := g.DialContext(context.Background(), adaptiveTestMetadata("stalled-handshake.test"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	c.Close()
++	if time.Since(start) > 180*time.Millisecond || !reflect.DeepEqual(raw.writeSizes, []int{0}) {
++		t.Fatal("handshake escaped attempt budget or sent business payload")
++	}
++}
++
++func TestAdaptiveDoesNotCloseUndefinedDialErrorConnection(t *testing.T) {
++	// Some real adapters return a wrapper around nil when their handshake fails.
++	// With a dial error, the connection is not usable and cleanup is adapter-owned.
++	undefined := &adaptiveTestConn{}
++	g := adaptiveTestGroup(t, AdaptiveOption{}, adaptiveTestNode("A", func(context.Context, *C.Metadata) (C.Conn, error) { return undefined, errors.New("dial failed") }), adaptiveTestNode("B", adaptiveTestOK))
++	c, err := g.DialContext(context.Background(), adaptiveTestMetadata("undefined.test"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	c.Close()
++	if undefined.closes != 0 {
++		t.Fatal("used undefined connection returned with dial error")
 +	}
 +}
 diff --git a/adapter/outboundgroup/parser.go b/adapter/outboundgroup/parser.go

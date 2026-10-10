@@ -1,6 +1,5 @@
 {
   "validated_dates": [
-    "2026-10-10",
     "2026-10-11"
   ],
   "baseline": {
@@ -9,17 +8,17 @@
     "source_url": "https://codeload.github.com/MetaCubeX/mihomo/tar.gz/refs/tags/v1.19.32",
     "source_directory": "mihomo-1.19.32",
     "source_sha256": "ab130b7fab3893d01aa44c0d39be34a26da716c1d36832fbac9fa054a1d862a0",
-    "patch_sha256": "c4b8b9d77a5cb8d7399bcb452423e52f3201882c69be3e07403b35fdbe069ade",
+    "patch_sha256": "a3cbc2e5a55d87c5343b0917ccd94cb9ad15789a817603d81c8720c275f24459",
     "go_toolchain": "go1.27.2",
-    "version": "v1.19.32-adaptive-prototype",
+    "version": "v1.19.32-adaptive-prototype.2",
     "build_tags": [],
     "platform_validated": "linux/amd64",
     "upstream_commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36"
   },
-  "binary_sha256": "55e3fd8b7c1f94a31e736d69f6513edc9fa1ec7a4aa83b167991cd6e282abdc2",
+  "binary_sha256": "f0855bee201f2e405e8526912397074ce26c36e2488403cdfa711a947a42c38b",
   "routing_runs": [
     {
-      "version": "Mihomo Meta v1.19.32-adaptive-prototype linux amd64 with go1.27.2 unknown time",
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
       "group": "adaptive",
       "max_failed_times": 5,
       "failure_scope": "target",
@@ -65,7 +64,7 @@
       "scope": "local HTTP CONNECT + TCP stream; no real AI requests"
     },
     {
-      "version": "Mihomo Meta v1.19.32-adaptive-prototype linux amd64 with go1.27.2 unknown time",
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
       "group": "adaptive",
       "max_failed_times": 5,
       "failure_scope": "target",
@@ -84,7 +83,7 @@
       },
       "observations": {
         "initial_node": "nodeA",
-        "establishment_seconds": 0.602,
+        "establishment_seconds": 0.606,
         "establishment_error": null,
         "dial_attempts": {
           "nodeA": 1,
@@ -111,7 +110,7 @@
       "scope": "local HTTP CONNECT + TCP stream; no real AI requests"
     },
     {
-      "version": "Mihomo Meta v1.19.32-adaptive-prototype linux amd64 with go1.27.2 unknown time",
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
       "group": "adaptive",
       "max_failed_times": 5,
       "failure_scope": "all",
@@ -157,7 +156,7 @@
       "scope": "local HTTP CONNECT + TCP stream; no real AI requests"
     },
     {
-      "version": "Mihomo Meta v1.19.32-adaptive-prototype linux amd64 with go1.27.2 unknown time",
+      "version": "Mihomo Meta v1.19.32-adaptive-prototype.2 linux amd64 with go1.27.2 unknown time",
       "group": "adaptive",
       "max_failed_times": 5,
       "failure_scope": "all",
@@ -237,7 +236,7 @@
             "nodeC": 1,
             "nodeB": 0
           },
-          "dial_seconds": 0.009,
+          "dial_seconds": 0.001,
           "configured_budget_ms": 250,
           "stalled": false
         }
@@ -255,7 +254,7 @@
             "nodeC": 1,
             "nodeB": 0
           },
-          "dial_seconds": 0.253,
+          "dial_seconds": 0.251,
           "configured_budget_ms": 250,
           "stalled": true
         }
@@ -294,7 +293,7 @@
             "nodeC": 1,
             "nodeB": 0
           },
-          "dial_seconds": 0.009,
+          "dial_seconds": 0.001,
           "configured_budget_ms": 250,
           "stalled": false
         }
@@ -322,7 +321,7 @@
   "go_tests": {
     "adaptive_race": {
       "passed": true,
-      "tests": 10
+      "tests": 14
     },
     "related_packages": {
       "passed": true
@@ -349,6 +348,11 @@
     "matching_clean_builds": true,
     "inside_parent_checkout_isolated": true,
     "existing_output_refused": true,
-    "corrupt_source_refused": true
+    "corrupt_source_refused": true,
+    "guard_checks_validated_dates": [
+      "2026-10-10",
+      "2026-10-11"
+    ],
+    "matching_clean_builds_validated_date": "2026-10-11"
   }
 }

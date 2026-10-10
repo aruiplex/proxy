@@ -162,7 +162,7 @@ def serving(server):
 
 
 class Stream:
-    def __init__(self, port, origin_port):
+    def __init__(self, port, origin_port, ssl_context=None):
         self.conn = socket.create_connection(("127.0.0.1", port), timeout=3)
         self.source_port = self.conn.getsockname()[1]
         try:
@@ -170,6 +170,8 @@ class Stream:
             header, _ = read_headers(self.conn)
             if b" 200 " not in header.split(b"\r\n", 1)[0]:
                 raise ValueError(header.split(b"\r\n", 1)[0].decode())
+            if ssl_context is not None:
+                self.conn = ssl_context.wrap_socket(self.conn, server_hostname="stream.test")
             self.conn.sendall(b"GET /stream HTTP/1.1\r\nHost: stream.test\r\n\r\n")
             header, tail = read_headers(self.conn)
             if b" 200 " not in header.split(b"\r\n", 1)[0]:
@@ -209,7 +211,7 @@ class Stream:
 
 
 class Kernel:
-    def __init__(self, binary, group, directory, origin, health_origin, nodes, max_failed_times, group_options=None):
+    def __init__(self, binary, group, directory, origin, health_origin, nodes, max_failed_times, group_options=None, proxy_definitions=None):
         self.port = free_port()
         self.api_port = free_port()
         self.origin_port = origin.server_address[1]
@@ -237,7 +239,7 @@ class Kernel:
             "dns": {"enable": False},
             "hosts": {"stream.test": "127.0.0.1", "health.test": "127.0.0.1"},
             "profile": {"store-selected": False, "store-fake-ip": False},
-            "proxies": [{"name": name, "type": "http", "server": "127.0.0.1", "port": node.server_address[1]} for name, node in nodes.items()],
+            "proxies": proxy_definitions if proxy_definitions is not None else [{"name": name, "type": "http", "server": "127.0.0.1", "port": node.server_address[1]} for name, node in nodes.items()],
             "proxy-groups": [group_config],
             "rules": ["MATCH,TEST"],
         }

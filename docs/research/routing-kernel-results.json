@@ -1,0 +1,308 @@
+[
+  {
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026\nUse tags: with_gvisor",
+    "group": "select",
+    "max_failed_times": 5,
+    "failure_scope": "all",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "healthy_stream_survives_brief_idle": true,
+      "stream_resumes_after_idle": true,
+      "new_connection_uses_other_node": true,
+      "healthy_stream_survives_switch": true,
+      "negative_control_detects_explicit_close": true
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "official-select",
+    "run": 0
+  },
+  {
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026\nUse tags: with_gvisor",
+    "group": "select",
+    "max_failed_times": 5,
+    "failure_scope": "all",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "healthy_stream_survives_brief_idle": true,
+      "stream_resumes_after_idle": true,
+      "new_connection_uses_other_node": true,
+      "healthy_stream_survives_switch": true,
+      "negative_control_detects_explicit_close": true
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "official-select",
+    "run": 1
+  },
+  {
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026\nUse tags: with_gvisor",
+    "group": "fallback",
+    "max_failed_times": 5,
+    "failure_scope": "all",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "failed_establishment_retries_and_recovers": false,
+      "healthy_stream_survives_other_dial_failure": true,
+      "new_connection_recovers_after_health_check": true
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "establishment_seconds": 3.303,
+      "establishment_error": "TimeoutError: timed out",
+      "dial_attempts": {
+        "nodeA": 10,
+        "nodeB": 0
+      },
+      "first_connection_still_in_api": true,
+      "forced_health_check": {
+        "error_status": 503,
+        "message": "{\"message\":\"An error occurred in the delay test\"}\n"
+      },
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "official-default",
+    "run": 0
+  },
+  {
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026\nUse tags: with_gvisor",
+    "group": "fallback",
+    "max_failed_times": 5,
+    "failure_scope": "all",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "failed_establishment_retries_and_recovers": false,
+      "healthy_stream_survives_other_dial_failure": true,
+      "new_connection_recovers_after_health_check": true
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "establishment_seconds": 3.303,
+      "establishment_error": "TimeoutError: timed out",
+      "dial_attempts": {
+        "nodeA": 10,
+        "nodeB": 0
+      },
+      "first_connection_still_in_api": true,
+      "forced_health_check": {
+        "error_status": 503,
+        "message": "{\"message\":\"An error occurred in the delay test\"}\n"
+      },
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "official-default",
+    "run": 1
+  },
+  {
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026\nUse tags: with_gvisor",
+    "group": "fallback",
+    "max_failed_times": 1,
+    "failure_scope": "all",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "failed_establishment_retries_and_recovers": false,
+      "healthy_stream_survives_other_dial_failure": true,
+      "new_connection_recovers_after_health_check": true
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "establishment_seconds": 2.682,
+      "establishment_error": "EOFError: connection ended before complete response headers",
+      "dial_attempts": {
+        "nodeA": 10,
+        "nodeB": 0
+      },
+      "first_connection_still_in_api": true,
+      "forced_health_check": {
+        "error_status": 503,
+        "message": "{\"message\":\"An error occurred in the delay test\"}\n"
+      },
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "official-fast",
+    "run": 0
+  },
+  {
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026\nUse tags: with_gvisor",
+    "group": "fallback",
+    "max_failed_times": 1,
+    "failure_scope": "all",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "failed_establishment_retries_and_recovers": false,
+      "healthy_stream_survives_other_dial_failure": true,
+      "new_connection_recovers_after_health_check": true
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "establishment_seconds": 3.276,
+      "establishment_error": "EOFError: connection ended before complete response headers",
+      "dial_attempts": {
+        "nodeA": 10,
+        "nodeB": 0
+      },
+      "first_connection_still_in_api": true,
+      "forced_health_check": {
+        "error_status": 503,
+        "message": "{\"message\":\"An error occurred in the delay test\"}\n"
+      },
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "official-fast",
+    "run": 1
+  },
+  {
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026\nUse tags: with_gvisor",
+    "group": "fallback",
+    "max_failed_times": 1,
+    "failure_scope": "target",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "failed_establishment_retries_and_recovers": false,
+      "healthy_stream_survives_other_dial_failure": true,
+      "new_connection_recovers_after_health_check": false
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "establishment_seconds": 3.303,
+      "establishment_error": "TimeoutError: timed out",
+      "dial_attempts": {
+        "nodeA": 10,
+        "nodeB": 0
+      },
+      "first_connection_still_in_api": true,
+      "forced_health_check": {
+        "delay": 11
+      },
+      "later_error": "timed out",
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "official-target",
+    "run": 0
+  },
+  {
+    "version": "Mihomo Meta v1.19.32 linux amd64 with go1.26.8 Wed Sep 30 16:55:19 UTC 2026\nUse tags: with_gvisor",
+    "group": "fallback",
+    "max_failed_times": 1,
+    "failure_scope": "target",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "failed_establishment_retries_and_recovers": false,
+      "healthy_stream_survives_other_dial_failure": true,
+      "new_connection_recovers_after_health_check": false
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "establishment_seconds": 3.303,
+      "establishment_error": "TimeoutError: timed out",
+      "dial_attempts": {
+        "nodeA": 10,
+        "nodeB": 0
+      },
+      "first_connection_still_in_api": true,
+      "forced_health_check": {
+        "delay": 10
+      },
+      "later_error": "connection ended before complete response headers",
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "official-target",
+    "run": 1
+  },
+  {
+    "version": "Mihomo Meta alpha-smart-319f302 linux amd64 with go1.26.8 Fri Oct  9 21:31:59 UTC 2026\nUse tags: with_gvisor",
+    "group": "smart",
+    "max_failed_times": 5,
+    "failure_scope": "target",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "failed_establishment_retries_and_recovers": true,
+      "healthy_stream_survives_other_dial_failure": false,
+      "feedback_preserves_other_healthy_connection": false
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "establishment_seconds": 0.613,
+      "establishment_error": null,
+      "dial_attempts": {
+        "nodeA": 2,
+        "nodeB": 1
+      },
+      "first_connection_still_in_api": false,
+      "connections_after_feedback": 0,
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "smart-target",
+    "run": 0
+  },
+  {
+    "version": "Mihomo Meta alpha-smart-319f302 linux amd64 with go1.26.8 Fri Oct  9 21:31:59 UTC 2026\nUse tags: with_gvisor",
+    "group": "smart",
+    "max_failed_times": 5,
+    "failure_scope": "target",
+    "checks": {
+      "baseline_stream_progresses": true,
+      "failed_establishment_retries_and_recovers": true,
+      "healthy_stream_survives_other_dial_failure": false,
+      "feedback_preserves_other_healthy_connection": false
+    },
+    "observations": {
+      "initial_node": "nodeA",
+      "establishment_seconds": 0.613,
+      "establishment_error": null,
+      "dial_attempts": {
+        "nodeA": 2,
+        "nodeB": 1
+      },
+      "first_connection_still_in_api": false,
+      "connections_after_feedback": 0,
+      "fixture_errors": {
+        "nodeA": [],
+        "nodeB": []
+      }
+    },
+    "scope": "local HTTP CONNECT + TCP stream; no real AI requests",
+    "case": "smart-target",
+    "run": 1
+  }
+]

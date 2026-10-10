@@ -60,9 +60,10 @@ usage() {
     printf '\n'
 
     printf '  %s📦 安装%s\n' "${C_B}" "$n"
-    printf '  %-*s %s\n' "$w" "install [--via github|brew|gz:FILE] [--bin PATH]" "检测/下载 mihomo + 引导配置 + 装钩子"
+    printf '  %-*s %s\n' "$w" "install --manifest FILE | --bin PATH | --via ..." "检测/下载 mihomo + 引导配置 + 装钩子"
     printf '  %-*s %s\n' "$w" "init" "仅初始化配置 + 钩子 (已有二进制)"
-    printf '  %-*s %s\n' "$w" "upgrade" "升级 mihomo"
+    printf '  %-*s %s\n' "$w" "upgrade --manifest FILE | --version VERSION" "准备同来源内核升级 (不自动启用)"
+    printf '  %-*s %s\n' "$w" "kernel prepare | activate | rollback | status" "固定来源/版本，校验、启用及回退"
     printf '  %-*s %s\n' "$w" "uninstall" "移除钩子/软链 (配置保留)"
     printf '\n'
 
@@ -73,6 +74,7 @@ usage() {
     printf '\n'
 
     printf '  %s🌍 节点 / 订阅%s\n' "${C_B}" "$n"
+    printf '  %-*s %s\n' "$w" "auto prepare | quality | feedback HOST:PORT" "本机目标质量 / 反馈当前线路并重新自动选路"
     printf '  %-*s %s\n' "$w" "node list | test | use" "节点列表 / 测延迟后直切 / 模糊切换"
     printf '  %-*s %s\n' "$w" "region list | apply | preset | add | rm | set" "地区自动组 (HK/SG/JP/US 一键预设)"
     printf '  %-*s %s\n' "$w" "sub add | rm | list | use | show | refresh" "多订阅管理 (refresh 自动重放 merge)"
@@ -114,6 +116,7 @@ case $cmd in
     init)           load install; proxy_init "$@" ;;
     doctor)         load install; proxy_doctor "$@" ;;
     upgrade)        load install; proxy_upgrade "$@" ;;
+    kernel)         load kernel; kernel_cmd "$@" ;;
     uninstall)      load install; proxy_uninstall "$@" ;;
 
     start)          load service; svc_start "$@" ;;
@@ -124,6 +127,8 @@ case $cmd in
 
     env)            load env; env_cmd "$@" ;;
 
+    auto)           load auto; auto_cmd "$@" ;;
+    quality|feedback) load quality; quality_cmd "$cmd" "$@" ;;
     node)           load node; node_cmd "$@" ;;
     merge)          load merge; merge_cmd "$@" ;;
     region)         load region; region_cmd "$@" ;;

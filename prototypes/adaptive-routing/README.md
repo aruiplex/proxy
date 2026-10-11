@@ -1,6 +1,6 @@
 # 目标级自动选路原型
 
-对应 [proxy #3](https://github.com/aruiplex/proxy/issues/3)。这是隔离验证用的 mihomo 补丁，尚未接入日常 proxy 命令或替换运行中的内核。
+对应 [proxy #3](https://github.com/aruiplex/proxy/issues/3)。固定原型补丁现已接入日常 `proxy auto/kernel/quality/feedback` 命令；本机正在 systemd 监督下试用 prototype.2，并保留 1.19.29 回退。源码后续修改的唯一权威来源为 [aruiplex/mihomo](https://github.com/aruiplex/mihomo/tree/adaptive/stable)。本目录的补丁、基线和结果冻结为原始 prototype.2 的可复现证据，不能当作新版本的验证摘要。
 
 ## 已实现
 
@@ -90,7 +90,7 @@ python3 tests/integration/protocol_probe.py \
   --protocol vmess-ws-early --failure-mode ws-reject
 ```
 
-UDP、QUIC、TUN、长时间空闲、Reality/Vision、其他插件/多路复用组合、跨机器状态、历史持久化及真实 Codex/Antigravity 业务尚未验证。部分协议没有目标连接确认，因此响应期失败仍可能需要应用重新建立连接；不能承诺将已中断的连接无缝迁移或重复请求。日常试用应通过候选配置校验与版本回退流程启用；这些未验证范围仍需在实际应用中逐步确认。
+已补充 60 秒 TLS 长流、60 秒空闲与恢复、全部候选故障有限尝试、组重载/节点移除测试；见 `../../docs/research/stability-results.json`。持续 Codex 对话计入用户观察到的真实业务使用，不证明同一 socket 复用；Antigravity 尚无独立验收。UDP、QUIC、TUN、Reality/Vision、其他插件/多路复用组合、跨机器状态尚未验证。部分协议没有目标连接确认，因此响应期失败仍可能需要应用重新建立连接；不能承诺将已中断的连接无缝迁移或重复请求。日常试用应通过候选配置校验与版本回退流程启用；这些未验证范围仍需在实际应用中逐步确认。
 
 ## 之后如何同步上游
 

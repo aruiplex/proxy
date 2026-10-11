@@ -106,7 +106,7 @@ proxy feedback 'example.com:443' --reason timeout
 
 ## 已验证
 
-- 22 个管理层行为测试：来源保持、明确切换、校验失败保留、配置变化保护、回退、异常中断恢复、运行保护、质量认证、同步隔离与不安全配置包拒绝。
+- 管理层行为测试：来源保持、明确切换、校验失败保留、配置变化保护、回退、异常中断恢复、运行保护、质量认证、同步隔离与不安全配置包拒绝。
 - 真实官方内核与实验内核的校验、切换和回退通过。
 - 完整命令流程验证 TLS 1.3 流：候选生成、启用、质量查询、反馈换线、建立故障恢复、健康流保留、订阅候选重放与官方回退。
 - 真实内核接受生成的块式 YAML、TCP 条件规则与 no-resolve；父仓库命令参数（包括空格路径）及错误码透传验证通过。
@@ -117,3 +117,9 @@ proxy feedback 'example.com:443' --reason timeout
 python3 tests/integration/managed_routing_probe.py \
   --kernel /path/to/validated-adaptive --official /path/to/official-v1.19.32
 ```
+
+## 稳定性与后续发行
+
+持续 Codex 对话已计入用户观察到的业务使用，不代表同一 socket 复用。60 秒 TLS 流、60 秒空闲、故障恢复、组重载/节点删除验证见 [结果](../research/stability-results.json)。Antigravity、TUN/UDP/QUIC 尚需独立验收。
+
+低频业务探测、日志轮转与反馈记录见 [健康监测](health.md)。后续内核源码与稳定版升级流水线以 [aruiplex/mihomo](https://github.com/aruiplex/mihomo) 为唯一权威；本仓库冻结原型补丁以便复现旧结果。CI 候选只在隔离夹具中验证，准备版本与本机启用分开。

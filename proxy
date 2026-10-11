@@ -92,6 +92,7 @@ usage() {
     printf '  %-*s %s\n' "$w" "docker on | off | status" "Docker 走 mixed-port (容器/build, 订阅刷新后保留)"
     printf '  %-*s %s\n' "$w" "pool on | off | status | refresh" "节点池模式: 全机场节点归一化合并 + 无感自动切换"
     printf '  %-*s %s\n' "$w" "sync export | import | push | pull" "多端同步 merge/region/订阅/设置 (对标 scripts secret)"
+    printf '  %-*s %s\n' "$w" "health check | status | install | record" "低频 HTTPS 监测 / 故障证据 / 业务反馈"
     printf '  %-*s %s\n' "$w" "doctor" "环境体检"
     printf '\n'
 
@@ -137,6 +138,7 @@ case $cmd in
     check)          load check; proxy_check "$@" ;;
     route)          load route; route_cmd "$@" ;;
     monitor)        load monitor; monitor_cmd "$@" ;;
+    health)         load health; health_cmd "$@" ;;
     ui)             load ui; ui_cmd "$@" ;;
     lan)            load lan; lan_cmd "$@" ;;
     docker)         load docker; docker_cmd "$@" ;;

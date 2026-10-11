@@ -56,15 +56,31 @@ proxy kernel status
 
 支持 JSON 和常见块式 YAML。对不能安全理解的 YAML 结构会拒绝生成；最终使用候选内核 `-t` 验证。配置引用的资源需要在本机状态目录中可用；状态目录内的资源绝对路径在校验副本中映射，原配置保持原路径。状态目录外的绝对路径或符号链接可能不符合临时副本的安全路径约束，会拒绝候选，不修改现有资源。
 
-维护时执行：
+Linux 上若已安装用户级 `proxy-mihomo.service`，维护时由 systemd 管理进程：
 
 ```bash
-proxy stop
+systemctl --user stop proxy-mihomo.service
 proxy kernel activate
-proxy start
+systemctl --user start proxy-mihomo.service
 ```
 
-不满意时停机、`proxy kernel rollback`、`proxy start`。当前实验构建未验证 TUN/QUIC/UDP 自适应和真实 AI 业务；保留 UDP 原规则只保证配置策略不被改写，不等于已验证该业务。
+不满意时先 `systemctl --user stop proxy-mihomo.service`，再 `proxy kernel rollback`、`systemctl --user start proxy-mihomo.service`。再次测试也必须先停该服务，避免端口冲突及监督进程重新拉起旧实例。其他环境应使用对应的长期进程监督器；普通交互终端的手动维护仍可用 `proxy stop`、`kernel activate/rollback`、`proxy start`，但 `nohup` 不保证进程能逃离执行工具的会话清理。
+
+启动命令返回后，在**另一次调用**中验收，不能只检查启动时的 PID 和控制器：
+
+```bash
+python3 tests/integration/live_tls_acceptance.py \
+  --root "$HOME/.config/mihomo" --proxy http://127.0.0.1:7890 \
+  --expected-version v1.19.32-adaptive-prototype.2 \
+  --url https://chatgpt.com/robots.txt --requests 3 --settle-seconds 10 \
+  --report /tmp/proxy-live-tls-result.json
+```
+
+探测通过本机代理完成真实 ChatGPT HTTPS GET，校验证书、HTTP 200 和完整非空响应，并持续检查同一进程、代理端口和控制器。Linux 还核对两个监听端口属于该 PID，避免误把竞争实例的响应当作候选成功。网络、HTTP 状态或进程检查失败都会返回非零退出码；发生自动重启也不算同一次稳定运行。控制器须为本机回环地址，curl 需支持 `%{json}`。
+
+默认 URL 为公开 `robots.txt`，不是登录后的 AI 业务；首页可能因访问策略返回 403，即使证书校验成功也不能计为 200。可用 `--url` 指定已知可用的公开 HTTPS 目标，禁止 URL 中携带凭据或查询参数。验收脚本不读取应用 Cookie/Token、不重启服务、不调整节点；登录后的 Codex/Antigravity 请求和长连接仍需要独立验收。当前实验构建未验证 TUN/QUIC/UDP 自适应；保留 UDP 原规则只保证配置策略不被改写，不等于已验证该业务。
+
+2026-10-11 的[进程退出诊断记录](../research/kernel-exit-diagnosis.md)包含执行会话清理的官方/实验内核对照，以及启动健康后终止进程的失败验收。
 
 ## 查看质量与反馈
 

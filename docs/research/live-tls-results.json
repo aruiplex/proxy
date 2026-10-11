@@ -1,0 +1,189 @@
+{
+  "date": "2026-10-11",
+  "timezone": "Asia/Shanghai",
+  "unit_tests_passed": 24,
+  "stable_version": "1.19.29",
+  "experimental_version": "v1.19.32-adaptive-prototype.2",
+  "endpoint": "https://chatgpt.com/robots.txt",
+  "historical_exit_signal": null,
+  "interpretation": "official and experimental unsupervised cores disappear after execution session completion; supervised experiment survives short live requests; historical cause remains inferred",
+  "controlled_tests": {
+    "acceptance_detects_post_start_exit": true,
+    "intentional_termination_returncode": 0,
+    "production_service_restored": true,
+    "production_files_unchanged": true,
+    "tests": [
+      {
+        "test": "experimental-original",
+        "result": {
+          "passed": true,
+          "version": "v1.19.32-adaptive-prototype.2",
+          "same_pid_survived": true,
+          "requests": [
+            {
+              "target": "chatgpt.com",
+              "curl_exit": 0,
+              "http_status": 200,
+              "certificate_verified": true,
+              "bytes_received": 4390,
+              "seconds": 1.043544,
+              "passed": true
+            },
+            {
+              "target": "chatgpt.com",
+              "curl_exit": 0,
+              "http_status": 200,
+              "certificate_verified": true,
+              "bytes_received": 4390,
+              "seconds": 0.564031,
+              "passed": true
+            },
+            {
+              "target": "chatgpt.com",
+              "curl_exit": 0,
+              "http_status": 200,
+              "certificate_verified": true,
+              "bytes_received": 4390,
+              "seconds": 0.568327,
+              "passed": true
+            }
+          ],
+          "failures": [],
+          "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+        },
+        "unexpected_exit": null
+      },
+      {
+        "test": "experimental-adaptive",
+        "result": {
+          "passed": true,
+          "version": "v1.19.32-adaptive-prototype.2",
+          "same_pid_survived": true,
+          "requests": [
+            {
+              "target": "chatgpt.com",
+              "curl_exit": 0,
+              "http_status": 200,
+              "certificate_verified": true,
+              "bytes_received": 4390,
+              "seconds": 2.60162,
+              "passed": true
+            },
+            {
+              "target": "chatgpt.com",
+              "curl_exit": 0,
+              "http_status": 200,
+              "certificate_verified": true,
+              "bytes_received": 4390,
+              "seconds": 0.576604,
+              "passed": true
+            },
+            {
+              "target": "chatgpt.com",
+              "curl_exit": 0,
+              "http_status": 200,
+              "certificate_verified": true,
+              "bytes_received": 4390,
+              "seconds": 0.595959,
+              "passed": true
+            }
+          ],
+          "failures": [],
+          "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+        },
+        "unexpected_exit": null
+      },
+      {
+        "test": "injected-exit",
+        "result": {
+          "passed": false,
+          "version": "v1.19.32-adaptive-prototype.2",
+          "same_pid_survived": false,
+          "requests": [
+            {
+              "target": "chatgpt.com",
+              "curl_exit": 0,
+              "http_status": 200,
+              "certificate_verified": true,
+              "bytes_received": 4390,
+              "seconds": 0.596196,
+              "passed": true
+            }
+          ],
+          "failures": [
+            {
+              "kind": "core_or_listener_unavailable",
+              "error_type": "ProcessLookupError"
+            },
+            {
+              "kind": "acceptance_exception",
+              "error_type": "ProcessLookupError"
+            }
+          ],
+          "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+        },
+        "unexpected_exit": 0
+      }
+    ]
+  },
+  "tool_session_comparison": [
+    {
+      "mode": "official2",
+      "version": "1.19.29",
+      "controller_seen_healthy": true,
+      "process_disappeared_after_launcher": true,
+      "elapsed_seconds": 5.96,
+      "launcher_completed": true,
+      "tls_before_tool_return": true,
+      "production_service_restored": true
+    },
+    {
+      "mode": "experimental2",
+      "version": "v1.19.32-adaptive-prototype.2",
+      "controller_seen_healthy": true,
+      "process_disappeared_after_launcher": true,
+      "elapsed_seconds": 23.57,
+      "launcher_completed": true,
+      "tls_before_tool_return": true,
+      "production_service_restored": true
+    }
+  ],
+  "final_stable_acceptance": {
+    "passed": true,
+    "version": "1.19.29",
+    "same_pid_survived": true,
+    "listener_ownership_checked": true,
+    "core_health_continuous": true,
+    "requests": [
+      {
+        "target": "chatgpt.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "seconds": 0.590928,
+        "passed": true
+      },
+      {
+        "target": "chatgpt.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "seconds": 0.579826,
+        "passed": true
+      },
+      {
+        "target": "chatgpt.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "seconds": 0.57829,
+        "passed": true
+      }
+    ],
+    "failures": [],
+    "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+  }
+}

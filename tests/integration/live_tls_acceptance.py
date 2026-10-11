@@ -5,10 +5,12 @@ This performs public GET requests only. It does not read application credentials
 restart a service, select an exit, or modify routing. Reports contain no bodies.
 """
 import argparse
+import http.client
 import json
 import os
 import re
 import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -72,7 +74,7 @@ def run(args):
         raise ValueError('proxy must be an explicit loopback HTTP proxy')
     if proxy.username or proxy.password:
         raise ValueError('proxy credentials are not accepted')
-    urls = args.url or ['https://chatgpt.com/']
+    urls = args.url or ['https://chatgpt.com/robots.txt']
     for url in urls:
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -114,33 +116,67 @@ def run(args):
 
     watcher = threading.Thread(target=monitor, daemon=True)
     watcher.start()
+    connections = {}
     try:
-        for _ in range(args.requests):
+        for round_index in range(args.requests):
             for url in urls:
                 if failures:
                     break
-                result = subprocess.run([
-                    'curl', '--silent', '--show-error', '--proxy', args.proxy,
-                    '--noproxy', '', '--connect-timeout', str(args.max_time),
-                    '--max-time', str(args.max_time), '--output', os.devnull,
-                    '--write-out', '%{json}', url,
-                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=args.max_time + 2)
-                try:
-                    data = json.loads(result.stdout)
-                except (ValueError, UnicodeDecodeError):
-                    data = {}
-                passed = (result.returncode == 0 and data.get('http_code') == args.expect_status
-                          and data.get('ssl_verify_result') == 0 and data.get('size_download', 0) > 0)
-                samples.append({'target': urllib.parse.urlsplit(url).hostname,
-                                'curl_exit': result.returncode, 'http_status': data.get('http_code', 0),
-                                'certificate_verified': data.get('ssl_verify_result') == 0,
-                                'bytes_received': data.get('size_download', 0),
-                                'seconds': data.get('time_total'), 'passed': passed})
+                target = urllib.parse.urlsplit(url)
+                if args.keepalive:
+                    started = time.monotonic()
+                    if url not in connections:
+                        connection = http.client.HTTPSConnection(proxy.hostname, proxy.port,
+                            timeout=args.max_time, context=ssl.create_default_context())
+                        connections[url] = (connection, None)
+                        connection.set_tunnel(target.hostname, target.port or 443)
+                        connection.connect()
+                        connections[url] = (connection, connection.sock)
+                    connection, original_socket = connections[url]
+                    if connection.sock is not original_socket:
+                        raise OSError('TLS connection was replaced')
+                    connection.request('GET', target.path or '/', headers={'Connection': 'keep-alive'})
+                    response = connection.getresponse()
+                    count = 0
+                    expected = response.getheader('Content-Length')
+                    while True:
+                        block = response.read(65536)
+                        if not block:
+                            break
+                        count += len(block)
+                    complete = expected is None or count == int(expected)
+                    retained = connection.sock is original_socket
+                    passed = response.status == args.expect_status and count > 0 and complete and retained
+                    samples.append({'target': target.hostname, 'http_status': response.status,
+                                    'certificate_verified': True, 'bytes_received': count,
+                                    'complete_response': complete, 'same_tls_connection': retained,
+                                    'tls_version': original_socket.version(),
+                                    'seconds': round(time.monotonic() - started, 6), 'passed': passed})
+                else:
+                    result = subprocess.run([
+                        'curl', '--silent', '--show-error', '--proxy', args.proxy,
+                        '--noproxy', '', '--connect-timeout', str(args.max_time),
+                        '--max-time', str(args.max_time), '--output', os.devnull,
+                        '--write-out', '%{json}', url,
+                    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=args.max_time + 2)
+                    try:
+                        data = json.loads(result.stdout)
+                    except (ValueError, UnicodeDecodeError):
+                        data = {}
+                    passed = (result.returncode == 0 and data.get('http_code') == args.expect_status
+                              and data.get('ssl_verify_result') == 0 and data.get('size_download', 0) > 0)
+                    samples.append({'target': target.hostname,
+                                    'curl_exit': result.returncode, 'http_status': data.get('http_code', 0),
+                                    'certificate_verified': data.get('ssl_verify_result') == 0,
+                                    'bytes_received': data.get('size_download', 0),
+                                    'seconds': data.get('time_total'), 'passed': passed})
                 if not passed:
                     failures.append({'kind': 'https_request_failed'})
                     break
             if failures:
                 break
+            if args.keepalive and round_index + 1 < args.requests:
+                stop.wait(args.idle_seconds)
         if not failures:
             stop.wait(args.settle_seconds)
         try:
@@ -152,6 +188,8 @@ def run(args):
     finally:
         stop.set()
         watcher.join(timeout=2)
+        for connection, _ in connections.values():
+            connection.close()
     try:
         same_pid = pid_identity(pid) == identity and int((args.root / 'mihomo.pid').read_text().strip()) == pid
     except (OSError, ValueError):
@@ -159,6 +197,7 @@ def run(args):
     return {'passed': bool(samples) and not failures and all(item['passed'] for item in samples),
             'version': version, 'same_pid_survived': same_pid,
             'listener_ownership_checked': ownership_checked,
+            'request_mode': 'same TLS connection with idle intervals' if args.keepalive else 'fresh TLS connection per request',
             'core_health_continuous': not any(item['kind'] == 'core_or_listener_unavailable' for item in failures),
             'requests': samples, 'failures': failures,
             'scope': 'public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request'}
@@ -172,11 +211,13 @@ def main():
     parser.add_argument('--requests', type=int, default=3)
     parser.add_argument('--max-time', type=int, default=10)
     parser.add_argument('--settle-seconds', type=float, default=3)
+    parser.add_argument('--keepalive', action='store_true', help='reuse the same verified TLS connection across requests')
+    parser.add_argument('--idle-seconds', type=float, default=2)
     parser.add_argument('--expect-status', type=int, default=200)
     parser.add_argument('--expected-version')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
-    if args.requests < 1 or args.max_time < 1 or args.settle_seconds < 0:
+    if args.requests < 1 or args.max_time < 1 or args.settle_seconds < 0 or args.idle_seconds < 0:
         parser.error('requests/max-time must be positive and settle-seconds nonnegative')
     os.umask(0o077)
     try:

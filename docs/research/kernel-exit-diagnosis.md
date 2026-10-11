@@ -43,3 +43,9 @@ python3 tests/integration/live_tls_acceptance.py \
 切换说明改为先停止 systemd 服务，版本启用后通过 systemd 启动；验收放到启动命令完成后的独立调用中。`live_tls_acceptance.py` 持续检查 PID 身份、版本、两个端口及真实 HTTPS 响应；Linux 检查端口所有者。真实终止注入验证能识别“启动健康、请求成功、随后进程消失”，两个实际 socket 回归测试验证竞争进程的监听不能借用为候选健康证据。
 
 此记录没有把历史故障标为已彻底修复，也不证明实验版适合长期运行。公开 HTTPS 请求不等同于经过认证的 Codex/Antigravity AI 请求；机器人文本的短时完整传输不等同于长连接稳定性。实验版继续停用，当前稳定服务及已知可用出口保留。后续真实业务试用必须使用长期监督、独立验收及停机回退；不能再凭 PID 和控制器就绪宣告切换成功。
+
+## 现有 CLI 入口接入监督器
+
+后续将 proxy start/stop/restart 接到已有、且 PIDFile 匹配当前配置目录的用户级服务。先向 systemd 派发，再由服务内部取得启动锁，避免外部调用持锁等待自己的 ExecStart；通过 cgroup 判断内部工作进程，避免递归。没有匹配服务则沿用独立生命周期；已安装监督器不可达或派发失败时拒绝另起实例。用户服务文件没有被修改。
+
+真实验证：proxy stop 后等待三秒服务仍保持停止；proxy start/restart 返回后，在独立工具调用中确认进程属于用户服务并仍存活。四次 chatgpt.com/robots.txt 请求复用同一 TLS 1.3 socket，每次之间空闲十秒，均完整返回 200；Google/Gemini 的公开 HTTPS 基线也均为 200。新增四个监督器边界测试（包括派发失败不启动第二个内核），管理层共 28 项测试通过。数据见 supervised-lifecycle-results.json。公开短时重复 GET 不是经过认证的 AI/SSE 业务。

@@ -134,6 +134,29 @@ def public_probe(url, proxy, budget=10):
             'bytes': data.get('size_download', 0), 'seconds': data.get('time_total')}
 
 
+def routing_evidence(qualities):
+    """Retain route/fault correlation without storing private labels or guessing causes."""
+    kinds = collections.Counter(); reasons = collections.Counter()
+    events = []; faults = {}
+    for group, quality in qualities:
+        for event in quality.get('events') or []:
+            kind = event.get('kind', 'unknown'); reason = event.get('reason', '')
+            kinds[kind] += 1
+            if reason: reasons[reason] += 1
+            def label(value):
+                return hashlib.sha256((group + '\0' + value).encode()).hexdigest()
+            node = label(event.get('node', '')); target = label(event.get('target', ''))
+            events.append({'at': event.get('at'), 'kind': kind, 'reason': reason,
+                           'node_id': node, 'target_id': target})
+            if kind in ('dial-failed', 'transport-error'):
+                fault = faults.setdefault(node, {'targets': set(), 'kinds': collections.Counter()})
+                fault['targets'].add(target); fault['kinds'][kind] += 1
+    return {'event_kinds': dict(kinds), 'reasons': dict(reasons), 'events': events[-256:],
+            'node_faults': [{'node_id': node, 'target_count': len(fault['targets']), 'kinds': dict(fault['kinds'])}
+                            for node, fault in faults.items()],
+            'scope': 'bounded kernel event history; fault identifies observed node, not business/root cause'}
+
+
 def observe(root, proxy, targets=None, probe_budget=10, control_addresses=(('1.1.1.1', 443), ('8.8.8.8', 443))):
     result = {'process_alive': False, 'controller_ok': False, 'probes': {}, 'systemd': systemd()}
     try:
@@ -174,17 +197,12 @@ def observe(root, proxy, targets=None, probe_budget=10, control_addresses=(('1.1
         # Route events are evidence, not proof of business success or a root cause.
         try:
             groups = [n for n, p in api('/proxies')['proxies'].items() if p.get('type') == 'Adaptive']
-            kinds = collections.Counter()
-            reasons = collections.Counter()
-            event_ids = []
-            for group in groups:
+            qualities = []
+            for group in groups[:16]:
                 quality = api('/proxies/' + urllib.parse.quote(group, safe='') + '/quality')
-                for event in quality.get('events') or []:
-                    kinds[event['kind']] += 1
-                    if event.get('reason'): reasons[event['reason']] += 1
-                    # Fingerprints allow correlation without persisting destination/node labels.
-                    event_ids.append(hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest())
-            result['routing'] = {'event_kinds': dict(kinds), 'reasons': dict(reasons), 'event_ids': event_ids}
+                qualities.append((group, quality))
+            result['routing'] = routing_evidence(qualities)
+            result['routing']['groups_truncated'] = len(groups) > 16
         except (OSError, ValueError, KeyError):
             result['routing'] = {'available': False}
         if not any(p['passed'] for p in result['probes'].values()):

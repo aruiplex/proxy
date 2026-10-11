@@ -52,6 +52,17 @@ class HealthEvidence(unittest.TestCase):
             self.assertEqual(archives[0].read_bytes(), b'before\n')
             self.assertEqual(archives[0].stat().st_mode & 0o777, 0o600)
 
+    def test_node_fault_and_next_route_are_correlated_without_private_labels(self):
+        result = health.routing_evidence([('PRIVATE-GROUP', {'events': [
+            {'at':'2026-10-12T00:00:00Z','kind':'dial-failed','reason':'dial-error','node':'PRIVATE-NODE','target':'private.example:443'},
+            {'at':'2026-10-12T00:00:01Z','kind':'established','node':'BACKUP-NODE','target':'private.example:443'}]})])
+        text = json.dumps(result)
+        self.assertNotIn('PRIVATE', text); self.assertNotIn('private.example', text)
+        self.assertEqual(result['node_faults'][0]['target_count'], 1)
+        self.assertEqual(result['events'][0]['reason'], 'dial-error')
+        self.assertEqual(result['events'][0]['target_id'], result['events'][1]['target_id'])
+        self.assertNotEqual(result['events'][0]['node_id'], result['events'][1]['node_id'])
+
     def test_failed_archive_never_truncates_live_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); log=root/'mihomo.log'; log.write_bytes(b'before\n')

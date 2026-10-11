@@ -1,0 +1,52 @@
+{
+  "checked_at": "2026-10-11T18:36:43.661852+00:00",
+  "historical_bytes": 1537027531,
+  "historical_sample_windows_bytes": 1048576,
+  "windows": [
+    {
+      "offset_fraction": 0.0,
+      "warning_classes": {
+        "timeout": 65,
+        "other": 86,
+        "refused": 70,
+        "dns": 408
+      }
+    },
+    {
+      "offset_fraction": 0.25,
+      "warning_classes": {
+        "dns": 663,
+        "other": 1943
+      }
+    },
+    {
+      "offset_fraction": 0.5,
+      "warning_classes": {
+        "dns": 1082
+      }
+    },
+    {
+      "offset_fraction": 0.75,
+      "warning_classes": {
+        "dns": 1088
+      }
+    },
+    {
+      "offset_fraction": 1.0,
+      "warning_classes": {
+        "dns": 487,
+        "other": 200,
+        "refused": 2,
+        "timeout": 64
+      }
+    }
+  ],
+  "live_log_bytes": 72234,
+  "live_last_1MiB_warning_classes": {
+    "timeout": 2,
+    "other": 4
+  },
+  "active_writer_same_inode": true,
+  "conclusion": "bounded historical samples only; most volume predates patch; classes do not establish root cause or prove a current warning loop",
+  "classification_limit": "Keyword references only: dns/lookup can occur in traffic metadata; this is not attribution of the failure cause."
+}

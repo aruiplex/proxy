@@ -23,3 +23,7 @@ proxy health record --app antigravity --outcome timeout
 隔离 stability_probe.py 覆盖 60 秒证书验证 TLS 流、60 秒空闲和恢复、同地区/跨区、全部候选故障有限尝试、恢复、组重载/节点删除时保留健康流。已有 protocol_probe 覆盖响应丢失后 POST 不重放。这里模拟新连接路径中断，不能证明物理断线后的 TCP 迁移；TUN/UDP/QUIC 尚未验证。
 
 真实监测夹具还验证了：进程/控制器正常而 TLS 请求持续超时、恢复、探测程序不可用、独立 systemd 服务退出码 23/重启限流、SIGKILL 信号 9。见 [监测结果](../research/health-results.json)。journal 只提取 systemd 的结构化退出/限流事件，不写入原始消息。
+
+轮转后的本机检查确认历史归档完整保留、当前追加 fd 使用原 inode。历史 5 个 1 MiB 窗口的 warning 关键词引用主要涉及 DNS/lookup，部分 timeout/refused；关键词可能来自流量元数据，不等于故障归因。新的活动日志仅几十 KiB，不支持新内核日志风暴的结论；详见 [脱敏取样与轮转记录](../research/log-retention-results.json)。
+
+当前仍保留 allow-lan 和控制器监听配置及认证；一次 IPv4 连接快照未见 LAN 客户端，不能因此推断没有 LAN 或远程管理需求。确认实际客户端用途后再决定收紧范围。

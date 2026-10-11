@@ -1,0 +1,111 @@
+{
+  "date": "2026-10-11",
+  "timezone": "Asia/Shanghai",
+  "version": "v1.19.32-adaptive-prototype.2",
+  "supervisor": "existing proxy-mihomo.service",
+  "initial_region_preference": "US",
+  "previous_version_available": "1.19.29",
+  "unit_tests_passed": 28,
+  "source_sha256": "f0855bee201f2e405e8526912397074ce26c36e2488403cdfa711a947a42c38b",
+  "public_three_services": {
+    "passed": true,
+    "version": "v1.19.32-adaptive-prototype.2",
+    "same_pid_survived": true,
+    "listener_ownership_checked": true,
+    "request_mode": "fresh TLS connection per request",
+    "core_health_continuous": true,
+    "requests": [
+      {
+        "target": "chatgpt.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "seconds": 2.56249,
+        "passed": true
+      },
+      {
+        "target": "www.google.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 6624,
+        "seconds": 2.622197,
+        "passed": true
+      },
+      {
+        "target": "gemini.google.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 116,
+        "seconds": 2.642769,
+        "passed": true
+      }
+    ],
+    "failures": [],
+    "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+  },
+  "same_tls_after_idle": {
+    "passed": true,
+    "version": "v1.19.32-adaptive-prototype.2",
+    "same_pid_survived": true,
+    "listener_ownership_checked": true,
+    "request_mode": "same TLS connection with idle intervals",
+    "core_health_continuous": true,
+    "requests": [
+      {
+        "target": "chatgpt.com",
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "complete_response": true,
+        "same_tls_connection": true,
+        "tls_version": "TLSv1.3",
+        "seconds": 0.572501,
+        "passed": true
+      },
+      {
+        "target": "chatgpt.com",
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "complete_response": true,
+        "same_tls_connection": true,
+        "tls_version": "TLSv1.3",
+        "seconds": 0.282156,
+        "passed": true
+      },
+      {
+        "target": "chatgpt.com",
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "complete_response": true,
+        "same_tls_connection": true,
+        "tls_version": "TLSv1.3",
+        "seconds": 0.282771,
+        "passed": true
+      },
+      {
+        "target": "chatgpt.com",
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "complete_response": true,
+        "same_tls_connection": true,
+        "tls_version": "TLSv1.3",
+        "seconds": 0.282187,
+        "passed": true
+      }
+    ],
+    "failures": [],
+    "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+  },
+  "guard_completion": {
+    "accepted": true,
+    "active_version": "v1.19.32-adaptive-prototype.2",
+    "service_started": true
+  },
+  "authenticated_business_validation": "pending user execution of Codex/Antigravity tasks"
+}

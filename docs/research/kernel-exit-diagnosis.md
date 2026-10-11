@@ -1,6 +1,6 @@
 # 内核进程消失与真实 TLS 验收
 
-日期：2026-10-11（Asia/Shanghai）。状态：恢复官方 1.19.29，保留用户级 systemd 监督及用户选择的稳定出口；实验版本未作为正式服务启用。
+日期：2026-10-11（Asia/Shanghai）。初始处置：恢复官方 1.19.29，保留用户级 systemd 监督及稳定出口。后续已通过监督器启用实验试用，见文末的最新状态。
 
 ## 历史证据的限制
 
@@ -49,3 +49,11 @@ python3 tests/integration/live_tls_acceptance.py \
 后续将 proxy start/stop/restart 接到已有、且 PIDFile 匹配当前配置目录的用户级服务。先向 systemd 派发，再由服务内部取得启动锁，避免外部调用持锁等待自己的 ExecStart；通过 cgroup 判断内部工作进程，避免递归。没有匹配服务则沿用独立生命周期；已安装监督器不可达或派发失败时拒绝另起实例。用户服务文件没有被修改。
 
 真实验证：proxy stop 后等待三秒服务仍保持停止；proxy start/restart 返回后，在独立工具调用中确认进程属于用户服务并仍存活。四次 chatgpt.com/robots.txt 请求复用同一 TLS 1.3 socket，每次之间空闲十秒，均完整返回 200；Google/Gemini 的公开 HTTPS 基线也均为 200。新增四个监督器边界测试（包括派发失败不启动第二个内核），管理层共 28 项测试通过。数据见 supervised-lifecycle-results.json。公开短时重复 GET 不是经过认证的 AI/SSE 业务。
+
+## 监督下的本机试用
+
+启动入口修复及 28 项测试通过后，重新根据当前配置生成候选。初始地区偏好设为当前已知稳定出口所在的 US；地区根据用户节点标签判断，不验证实际地理位置。候选通过隔离配置校验后，由独立临时 systemd 服务执行停止原服务、明确启用固定实验版本、通过现有用户服务启动，再分别执行真实 HTTPS 验收。异常退出的 ExecStopPost 有独立恢复路径，检查本次候选标识后回退，避免改动另一操作选择的版本。
+
+ChatGPT、Google、Gemini 的公开 HTTPS 请求全部返回 200。ChatGPT 四次 GET 复用同一 TLS 1.3 socket，请求间空闲十秒；响应完整、证书有效，主进程未更换，服务重启次数为 0。临时验收服务已完成退出，核心继续由原 proxy-mihomo.service 管理。当前运行 v1.19.32-adaptive-prototype.2，上一版 1.19.29 及原配置/缓存保留供停机回退。原用户服务文件未修改。数据见 supervised-trial-results.json。
+
+该状态是公共网络验收通过后的试用，不是登录业务已完成验收。剩余验证需用户在 Codex 与 Antigravity 中执行真实任务，观察超时、断流和完整 AI 响应；未完成前 PR 和 issue 保持打开。质量仍在内存中，重启/组重载后清空。

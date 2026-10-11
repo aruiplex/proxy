@@ -39,6 +39,8 @@ if '-v' in sys.argv:
 elif '-t' in sys.argv:
  p=pathlib.Path(sys.argv[sys.argv.index('-f')+1])
  d=pathlib.Path(sys.argv[sys.argv.index('-d')+1])
+ for name in ['logs','health','adaptive-quality']:
+  if (d/name).exists(): raise SystemExit(3)
  # Absolute resources in the active home must be validated against its clone.
  for line in p.read_text().splitlines():
   if line.startswith('external-ui:'):
@@ -223,6 +225,13 @@ elif '-t' in sys.argv:
         self.assertEqual(self.config.read_text(), original)
         self.activate()
         self.assertEqual(self.config.read_text(), original)
+
+    def test_candidate_validation_excludes_live_logs_monitor_and_quality_history(self):
+        for name in ['logs','health','adaptive-quality']:
+            directory=self.home/name; directory.mkdir(); (directory/'evidence').write_text('local history')
+        self.prepare()
+        for name in ['logs','health','adaptive-quality']:
+            self.assertEqual((self.home/name/'evidence').read_text(), 'local history')
 
     def test_parallel_start_and_preparation_cannot_bypass_management_lock(self):
         manager = Manager(self.home)

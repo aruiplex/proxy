@@ -45,6 +45,12 @@ class AdaptiveConfig(unittest.TestCase):
         self.assertIn('# selected existing policy',out)
         self.assertEqual(render(out,PREFS),out)
 
+    def test_optional_local_quality_lifecycle_is_rendered_without_default_enabling(self):
+        self.assertNotIn('quality-persistence', render(BASE,PREFS))
+        out=render(BASE,dict(PREFS,quality_persistence=True,quality_ttl=86400))
+        self.assertIn('quality-persistence: true',out)
+        self.assertIn('quality-ttl: 86400',out)
+
     def test_explicit_policy_override_and_reserved_collision(self):
         out=render(BASE,dict(PREFS,policies=['PINNED']))
         self.assertIn('AND,((NETWORK,tcp),(DOMAIN-SUFFIX,pinned.test)),'+GROUP,out)

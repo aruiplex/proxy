@@ -68,7 +68,7 @@ usage() {
     printf '\n'
 
     printf '  %s🚀 运行%s\n' "${C_B}" "$n"
-    printf '  %-*s %s\n' "$w" "start | stop | restart" "启停 (nohup 直连二进制, brew 感知)"
+    printf '  %-*s %s\n' "$w" "start | stop | restart" "启停 (复用匹配的 systemd 监督器)"
     printf '  %-*s %s\n' "$w" "status" "运行/版本/出口节点/流量/端口/TUN/代理环境 + 自动诊断"
     printf '  %-*s %s\n' "$w" "log [-f]" "日志 (-f 跟随, 彩色高亮)"
     printf '\n'

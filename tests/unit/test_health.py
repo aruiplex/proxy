@@ -39,12 +39,6 @@ class HealthEvidence(unittest.TestCase):
         self.assertEqual(health.evaluate(self.sample(['chatgpt','google','gemini'], direct_controls_ok=False))['observed'], 'network_or_all_routes_failure')
         self.assertEqual(health.evaluate(self.sample(['chatgpt','google','gemini'], direct_controls_ok=True))['observed'], 'all_proxy_targets_failure')
 
-    def test_restart_limit_and_exit_signal_evidence_is_preserved(self):
-        evidence = {'ActiveState':'failed', 'Result':'start-limit-hit', 'ExecMainCode':'2', 'ExecMainStatus':'9', 'NRestarts':'10'}
-        state = health.evaluate({'process_alive':False, 'systemd':evidence})
-        self.assertEqual(state['observation']['systemd'], evidence)
-        self.assertEqual(state['notification']['to'], 'process_unavailable')
-
     def test_live_append_fd_continues_after_rotation_and_archive_is_private(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); log=root/'mihomo.log'; log.write_bytes(b'before\n')

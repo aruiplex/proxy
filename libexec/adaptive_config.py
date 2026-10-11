@@ -25,11 +25,13 @@ def preferences(path):
     if data.get('schema') != 1 or data.get('enabled') is not True:
         raise ConfigError('选路偏好需要 schema=1 和 enabled=true')
     allowed = {'schema', 'enabled', 'policies', 'direct_first', 'preferred_region', 'regions', 'region_patterns', 'exclude',
-               'max_attempts', 'dial_budget', 'attempt_timeout', 'failure_cooldown', 'max_records'}
+               'max_attempts', 'dial_budget', 'attempt_timeout', 'failure_cooldown', 'max_records', 'quality_persistence', 'quality_ttl'}
     if set(data) - allowed:
         raise ConfigError('选路偏好含未知字段')
     if 'direct_first' in data and not isinstance(data['direct_first'], bool):
         raise ConfigError('direct_first 必须为布尔值')
+    if 'quality_persistence' in data and not isinstance(data['quality_persistence'], bool):
+        raise ConfigError('quality_persistence 必须为布尔值')
     for key in ('regions', 'region_patterns'):
         if not isinstance(data.get(key, {}), dict):
             raise ConfigError(key + ' 必须为映射')
@@ -48,7 +50,7 @@ def preferences(path):
     if 'preferred_region' in data and not isinstance(data['preferred_region'], str):
         raise ConfigError('preferred_region 必须为字符串')
     limits = {'max_attempts': (1,16), 'dial_budget': (1,30000), 'attempt_timeout': (1,30000),
-              'failure_cooldown': (1,3600000), 'max_records': (1,65536)}
+              'failure_cooldown': (1,3600000), 'max_records': (1,65536), 'quality_ttl': (60,604800)}
     for key,(low,high) in limits.items():
         if key in data and (type(data[key]) is not int or not low <= data[key] <= high):
             raise ConfigError(key + ' 超出允许范围')
@@ -106,7 +108,7 @@ def adaptive_group(prefs, node_names):
     result = {'name': GROUP, 'type': 'adaptive', 'include-all': True, 'include-all-providers': True,
               'proxies': ['DIRECT'] if prefs.get('direct_first', True) else [], 'regions': regions}
     mapping = {'preferred_region': 'preferred-region', 'exclude': 'exclude-filter', 'max_attempts': 'max-attempts',
-               'dial_budget': 'dial-budget', 'attempt_timeout': 'attempt-timeout', 'failure_cooldown': 'failure-cooldown', 'max_records': 'max-records'}
+               'dial_budget': 'dial-budget', 'attempt_timeout': 'attempt-timeout', 'failure_cooldown': 'failure-cooldown', 'max_records': 'max-records', 'quality_persistence': 'quality-persistence', 'quality_ttl': 'quality-ttl'}
     for key, field in mapping.items():
         if key in prefs:
             result[field] = prefs[key]

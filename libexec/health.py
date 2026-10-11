@@ -7,10 +7,12 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
 import tempfile
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -20,6 +22,8 @@ TARGETS = {'chatgpt': 'https://chatgpt.com/robots.txt',
            'google': 'https://www.google.com/robots.txt',
            'gemini': 'https://gemini.google.com/robots.txt'}
 UNIT = 'proxy-mihomo.service'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from core_health import check_listener_ownership
 
 
 def atomic(path, value):
@@ -41,6 +45,8 @@ def evaluate(observation, previous=None):
         category = 'monitor_error'
     elif not observation.get('process_alive'):
         category = 'process_unavailable'
+    elif not observation.get('listener_ownership_ok', True):
+        category = 'listener_ownership_failure'
     elif not observation.get('controller_ok'):
         category = 'controller_unavailable'
     else:
@@ -71,7 +77,7 @@ def evaluate(observation, previous=None):
             if successes >= 2: failed = False
             target_states[name] = {'failures': failures, 'successes': successes, 'failed': failed}
             if failed: active_targets.append(name)
-        if active_targets and category.startswith('target_failure:'):
+        if active_targets and (category.startswith('target_failure:') or (category in ('all_proxy_targets_failure', 'network_or_all_routes_failure') and len(active_targets) < len(observation.get('probes', {})))):
             # A second intermittently failing target must not reset the first target's streak.
             category = 'target_failure:' + ','.join(sorted(active_targets))
             count = max(count, 3)
@@ -85,13 +91,29 @@ def evaluate(observation, previous=None):
             'confirmed': confirmed, 'notification': notification, 'observation': observation, 'target_states': target_states}
 
 
-def systemd():
-    result = subprocess.run(['systemctl', '--user', 'show', UNIT,
+def systemd(unit=UNIT):
+    result = subprocess.run(['systemctl', '--user', 'show', unit,
         '--property=MainPID,NRestarts,ActiveState,SubState,Result,ExecMainCode,ExecMainStatus'],
         capture_output=True, text=True, timeout=5)
     if result.returncode:
         return {}
-    return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    evidence = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    journal = subprocess.run(['journalctl', '--user', '-u', unit, '-n', '30', '--output=json', '--no-pager'],
+                             capture_output=True, text=True, timeout=5)
+    exits = []
+    limited = False
+    for line in journal.stdout.splitlines():
+        try:
+            entry = json.loads(line)
+            if entry.get('SYSLOG_IDENTIFIER') != 'systemd': continue
+            if 'Start request repeated too quickly' in (entry.get('MESSAGE') or ''): limited = True
+            match = re.search(r'Main process exited, code=(exited|killed|dumped), status=([0-9]+)', entry.get('MESSAGE', ''))
+            if match:
+                exits.append({'at_usec': entry.get('__REALTIME_TIMESTAMP'), 'code': match[1], 'status': int(match[2])})
+        except (ValueError, TypeError): pass
+    evidence['recent_exits'] = exits
+    evidence['restart_limit_observed'] = limited
+    return evidence
 
 
 def public_probe(url, proxy, budget=10):
@@ -112,7 +134,7 @@ def public_probe(url, proxy, budget=10):
             'bytes': data.get('size_download', 0), 'seconds': data.get('time_total')}
 
 
-def observe(root, proxy):
+def observe(root, proxy, targets=None, probe_budget=10, control_addresses=(('1.1.1.1', 443), ('8.8.8.8', 443))):
     result = {'process_alive': False, 'controller_ok': False, 'probes': {}, 'systemd': systemd()}
     try:
         pid = int((root / 'mihomo.pid').read_text())
@@ -129,6 +151,13 @@ def observe(root, proxy):
     parsed = urllib.parse.urlsplit('http://' + controller)
     if parsed.hostname not in ('localhost', '127.0.0.1', '::1') or not parsed.port:
         raise ValueError('health controller must use loopback')
+    if result['process_alive']:
+        try:
+            proxy_port = urllib.parse.urlsplit(proxy).port
+            result['listener_ownership_ok'] = check_listener_ownership(pid, {parsed.port, proxy_port})
+        except OSError:
+            result['listener_ownership_ok'] = False
+            return result
     headers = {'Authorization': 'Bearer ' + settings['secret']} if settings.get('secret') else {}
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     def api(path):
@@ -141,7 +170,7 @@ def observe(root, proxy):
     except (OSError, ValueError, KeyError):
         pass
     if result['process_alive'] and result['controller_ok']:
-        result['probes'] = {name: public_probe(url, proxy) for name, url in TARGETS.items()}
+        result['probes'] = {name: public_probe(url, proxy, probe_budget) for name, url in (targets or TARGETS).items()}
         # Route events are evidence, not proof of business success or a root cause.
         try:
             groups = [n for n, p in api('/proxies')['proxies'].items() if p.get('type') == 'Adaptive']
@@ -160,12 +189,12 @@ def observe(root, proxy):
             result['routing'] = {'available': False}
         if not any(p['passed'] for p in result['probes'].values()):
             controls = []
-            for address in ('1.1.1.1', '8.8.8.8'):
+            for address in control_addresses:
                 try:
-                    with socket.create_connection((address, 443), timeout=2): controls.append(True)
+                    with socket.create_connection(address, timeout=2): controls.append(True)
                 except OSError:
                     controls.append(False)
-            result['direct_controls_ok'] = any(controls)
+            result['direct_controls_ok'] = any(controls) if controls else None
     return result
 
 
@@ -235,6 +264,10 @@ def main():
     record.add_argument('--app', choices=['codex', 'antigravity'], required=True)
     record.add_argument('--outcome', choices=['complete', 'timeout', 'disconnect'], required=True)
     args = parser.parse_args()
+    if args.command == 'check':
+        proxy_url = urllib.parse.urlsplit(args.proxy)
+        if proxy_url.scheme != 'http' or proxy_url.hostname not in ('127.0.0.1','localhost','::1') or not proxy_url.port or proxy_url.username or proxy_url.password:
+            parser.error('probe proxy must be explicit loopback HTTP without credentials')
     root = args.root.resolve(); state_dir = root / 'health'; state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.umask(0o077)
     if args.command == 'install': install(root); return 0
@@ -269,7 +302,10 @@ def main():
             message = 'proxy health: ' + state['notification']['to']
             print(message, flush=True)
             if shutil.which('notify-send'):
-                subprocess.run(['notify-send', 'Proxy', message], capture_output=True, timeout=5)
+                try:
+                    subprocess.run(['notify-send', 'Proxy', message], capture_output=True, timeout=5)
+                except (OSError, subprocess.SubprocessError):
+                    print('proxy health: desktop notification unavailable; see journal', flush=True)
         print(json.dumps(state, ensure_ascii=False))
         return 0  # Reported faults are evidence; timer failures are reserved for runner faults.
 

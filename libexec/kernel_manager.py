@@ -231,7 +231,7 @@ class Manager:
         with tempfile.TemporaryDirectory(prefix='.kernel-validate-', dir=self.store) as temporary:
             home = Path(temporary) / 'home'
             shutil.copytree(self.root, home, symlinks=True,
-                            ignore=lambda path, names: ['kernels', 'mihomo.log', 'mihomo.pid'] if Path(path) == self.root else [])
+                            ignore=lambda path, names: ['kernels', 'mihomo.log', 'mihomo.pid', 'logs', 'health', 'adaptive-quality'] if Path(path) == self.root else [])
             candidate = home / 'candidate.yaml'
             candidate.write_text(clone_resource_paths(Path(config).read_text(), self.root, home))
             sidecar = Path(config).parent

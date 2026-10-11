@@ -107,5 +107,9 @@
   "downloaded_asset_digests_verified": true,
   "isolated_manifest_prepare_passed": true,
   "production_candidate_activated": false,
-  "scope": "isolated verified TLS/TCP fixtures; no production, authenticated AI, TUN, UDP or QUIC acceptance"
+  "scope": "isolated verified TLS/TCP fixtures; no production, authenticated AI, TUN, UDP or QUIC acceptance",
+  "production_config_prepare_passed": true,
+  "production_active_version": "v1.19.32-adaptive-prototype.2",
+  "production_prepared_version": "v1.19.32-adaptive.3",
+  "production_rollback_version": "1.19.29"
 }

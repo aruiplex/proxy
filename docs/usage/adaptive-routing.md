@@ -127,3 +127,5 @@ python3 tests/integration/managed_routing_probe.py \
 新 fork 候选支持共享偏好字段 `quality_persistence:true` 和 `quality_ttl:86400`，分别生成组配置 quality-persistence/quality-ttl；默认不启用持久化。旧 prototype.2 不支持这些字段，不应在旧版本上认为已经保存历史。新内核用私有文件、24 小时 TTL、容量限制、节点配置/凭据/订阅身份变更失效和坏文件冷启动维护本机历史。它不属于 sync 导出的质量数据；同步的是启用意图，接收端需要支持的新内核。当前本机仍使用内存记录。
 
 候选 `v1.19.32-adaptive.3` 已通过 [fork CI](https://github.com/aruiplex/mihomo/actions/runs/38164329436)，15 份夹具报告共 141 项检查，下载摘要与离线 manifest prepare 已验证；见 [发行证据](../research/fork-candidate-results.json)。CI 离线资产中的 manifest.local.json 使用相对文件名，可与同目录二进制一起下载后 prepare；manifest.json 的发行 URL 只在明确发布候选后有效。该候选尚未启用到本机，当前 prototype.2 的内存记录与原回退保持不变。
+
+本机现有配置也已通过新候选 `-t` 校验，候选已 prepare 到本机；运行中的 PID、active 版本和 1.19.29 回退未变。启用仍需维护时 stop/activate/start 和独立 TLS/业务验收；准备候选本身不切换流量。

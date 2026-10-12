@@ -1,0 +1,104 @@
+{
+  "unit_tests_passed": 28,
+  "existing_service_file_modified": false,
+  "cli_stop_keeps_unit_stopped": true,
+  "cli_start_and_restart_delegate_to_systemd": true,
+  "worker_recursion_and_kernel_lock_deadlock_avoided": true,
+  "start_call_completed_before_acceptance": true,
+  "official_same_tls_connection_with_three_10_second_idle_intervals": {
+    "passed": true,
+    "version": "1.19.29",
+    "same_pid_survived": true,
+    "listener_ownership_checked": true,
+    "request_mode": "same TLS connection with idle intervals",
+    "core_health_continuous": true,
+    "requests": [
+      {
+        "target": "chatgpt.com",
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "complete_response": true,
+        "same_tls_connection": true,
+        "tls_version": "TLSv1.3",
+        "seconds": 1.0556,
+        "passed": true
+      },
+      {
+        "target": "chatgpt.com",
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "complete_response": true,
+        "same_tls_connection": true,
+        "tls_version": "TLSv1.3",
+        "seconds": 0.290021,
+        "passed": true
+      },
+      {
+        "target": "chatgpt.com",
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "complete_response": true,
+        "same_tls_connection": true,
+        "tls_version": "TLSv1.3",
+        "seconds": 0.284728,
+        "passed": true
+      },
+      {
+        "target": "chatgpt.com",
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "complete_response": true,
+        "same_tls_connection": true,
+        "tls_version": "TLSv1.3",
+        "seconds": 0.276669,
+        "passed": true
+      }
+    ],
+    "failures": [],
+    "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+  },
+  "official_three_service_public_https": {
+    "passed": true,
+    "version": "1.19.29",
+    "same_pid_survived": true,
+    "listener_ownership_checked": true,
+    "request_mode": "fresh TLS connection per request",
+    "core_health_continuous": true,
+    "requests": [
+      {
+        "target": "chatgpt.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 4390,
+        "seconds": 1.076797,
+        "passed": true
+      },
+      {
+        "target": "www.google.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 6624,
+        "seconds": 0.695592,
+        "passed": true
+      },
+      {
+        "target": "gemini.google.com",
+        "curl_exit": 0,
+        "http_status": 200,
+        "certificate_verified": true,
+        "bytes_received": 116,
+        "seconds": 0.692238,
+        "passed": true
+      }
+    ],
+    "failures": [],
+    "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+  },
+  "scope": "existing user unit and public HTTPS; no authenticated AI requests"
+}

@@ -68,6 +68,27 @@ conf_set() {
 # resolve the configured mihomo binary path; fall back to a search
 mihomo_bin() {
     local b
+    if [[ -f "$CONF_DIR/kernels/undo.json" ]]; then
+        warn "内核切换尚未完成；运行 proxy kernel status 恢复，再重试"
+        return 1
+    fi
+    if [[ -f "$CONF_DIR/kernels/state.json" ]]; then
+        require python3
+        b=$(python3 - "$CONF_DIR/kernels/state.json" <<'PYCORE'
+import json,re,sys
+from pathlib import Path
+p=Path(sys.argv[1]); r=json.loads(p.read_text()).get('active')
+if r:
+ name=r['directory']
+ if not re.fullmatch(r'release-[0-9a-f]{32}',name): raise SystemExit(1)
+ print(p.parent/name/'mihomo')
+PYCORE
+        ) || return 1
+        if [[ -n "$b" ]]; then
+            [[ -x "$b" ]] || { warn "选中的内核丢失；运行 proxy kernel status 检查，未退回其他来源"; return 1; }
+            printf '%s' "$b"; return 0
+        fi
+    fi
     b=$(conf_get bin)
     [[ -n "$b" && -x "$b" ]] && { printf '%s' "$b"; return 0; }
     # search common locations + PATH

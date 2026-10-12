@@ -1,0 +1,115 @@
+{
+  "version": "v1.19.32-adaptive.3",
+  "source_repository": "aruiplex/mihomo",
+  "source_commit": "a08bf0d9900a19e0aa302bfcbb12b2eefad8a3d9",
+  "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df",
+  "patch_sha256": "3240b7a0bff2954b4fd2a0fc17618883d0c837cd5bb4030be173bb0c04414fd2",
+  "go_toolchain": "go1.27.2",
+  "platform": "linux/amd64",
+  "cgo_enabled": false,
+  "goamd64": "v1",
+  "ci_run": "https://github.com/aruiplex/mihomo/actions/runs/38164329436",
+  "passed": true,
+  "reports": [
+    {
+      "name": "managed",
+      "sha256": "afe1471836aebde9050c915ba8905ba4d5ae285dc82170d2041e87f8f730c439",
+      "checks": 11,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "stability",
+      "sha256": "f4c57dfd654e439032e8fc43b6c5d95e944b3df9ebb317b7173cc1f4138b7731",
+      "checks": 12,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "persistence",
+      "sha256": "b4b5f27cb100e4201c6b85e2f79518901a5a2af9af9186ebf0da3d59ff108a40",
+      "checks": 6,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "ss",
+      "sha256": "52ccf2f0e90a1dcc3cdea67c05b6daf593e745f7398619cf4dedfcd98a25e77b",
+      "checks": 9,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vmess",
+      "sha256": "e2a44b4edf086ae824b4ed4ed75a4c27eb7b60bf609ba33032d663dde734325a",
+      "checks": 9,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vmess-tls",
+      "sha256": "ae9b0862174f458d6437862b0bf157ea014c1d1ae3287e0f4f673b704a060117",
+      "checks": 9,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vless",
+      "sha256": "817c8f8481fea3ad59269fa3be76fa80ea770320d771bd27553088e6c78cdde9",
+      "checks": 9,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vless-tls",
+      "sha256": "476f03191c9d360c0f655e77794c2ec7103e7fd835cdf75e30cf80b71f84eb25",
+      "checks": 9,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "trojan",
+      "sha256": "2bc06846296a02c3573872fe8746695547e77742034cd286198bc9bc4927f1fe",
+      "checks": 9,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vmess-ws-early",
+      "sha256": "e088672ee7bf2355c3fe874cd0ed67bdc8a54b9de2a307c8a33b0fdd59805b9a",
+      "checks": 9,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vless-ws-early",
+      "sha256": "efd2c4c8d4cb8396cce845f1bf7e3fbfdf994aa094c90c8086941c735a280452",
+      "checks": 9,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vmess-ws-early-ws-reject-0",
+      "sha256": "d0ae3cb01dcf69f9be4c4bd17c11142904d0869c412c0082f72e5eafb63b2c27",
+      "checks": 10,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vmess-ws-early-ws-reject-1",
+      "sha256": "d0ae3cb01dcf69f9be4c4bd17c11142904d0869c412c0082f72e5eafb63b2c27",
+      "checks": 10,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vless-ws-early-ws-reject-0",
+      "sha256": "8937d273b83a865974efa3e58a578365d613039d97f3d2a019e344a13ea368cd",
+      "checks": 10,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    },
+    {
+      "name": "vless-ws-early-ws-reject-1",
+      "sha256": "8937d273b83a865974efa3e58a578365d613039d97f3d2a019e344a13ea368cd",
+      "checks": 10,
+      "binary_sha256": "f490db501e615e77c897cbbbe2e5f4e0fb1524316295284c3a794396558a88df"
+    }
+  ],
+  "report_count": 15,
+  "check_count": 141,
+  "downloaded_asset_digests_verified": true,
+  "isolated_manifest_prepare_passed": true,
+  "production_candidate_activated": false,
+  "scope": "isolated verified TLS/TCP fixtures; no production, authenticated AI, TUN, UDP or QUIC acceptance",
+  "production_config_prepare_passed": true,
+  "production_active_version": "v1.19.32-adaptive-prototype.2",
+  "production_prepared_version": "v1.19.32-adaptive.3",
+  "production_rollback_version": "1.19.29"
+}

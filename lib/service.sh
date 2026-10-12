@@ -1,7 +1,11 @@
 # shellcheck shell=bash
 # proxy/lib/service.sh — mihomo lifecycle. Manages the binary directly (nohup +
-# controller), independent of how it was installed (brew/gz/github), so behavior
-# is identical across machines.
+# controller), or delegates to an existing user systemd unit for this home.
+
+_svc_supervisor() {
+    require python3
+    python3 "$SCRIPT_DIR/libexec/systemd_service.py" --root "$CONF_DIR" "$1"
+}
 
 _svc_pid_matches() {
     local pid=$1 bin uid
@@ -68,6 +72,15 @@ _brew_stop() {
 }
 
 svc_start() {
+    if [[ "${PROXY_KERNEL_START_LOCKED:-}" != 1 ]]; then
+        # Dispatch before taking the kernel lock: ExecStart takes the same lock.
+        local supervised
+        if _svc_supervisor start; then return 0; else supervised=$?; fi
+        [[ "$supervised" == 3 ]] || return "$supervised"
+        source "$SCRIPT_DIR/lib/kernel.sh"
+        kernel_start
+        return
+    fi
     require python3
     local bin
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制 (运行 proxy install)"
@@ -103,6 +116,9 @@ svc_start() {
 }
 
 svc_stop() {
+    local supervised
+    if _svc_supervisor stop; then return 0; else supervised=$?; fi
+    [[ "$supervised" == 3 ]] || return "$supervised"
     require python3
     _brew_stop
     local pid
@@ -123,7 +139,13 @@ svc_stop() {
     ok "已停止"
 }
 
-svc_restart() { svc_stop >/dev/null 2>&1 || return 1; svc_start; }
+svc_restart() {
+    local supervised
+    if _svc_supervisor restart; then return 0; else supervised=$?; fi
+    [[ "$supervised" == 3 ]] || return "$supervised"
+    svc_stop >/dev/null 2>&1 || return 1
+    svc_start
+}
 
 # Apply the on-disk config: hot-reload via the controller; if the controller is
 # unreachable (000), fall back to stop+start so the new config actually takes

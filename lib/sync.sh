@@ -31,8 +31,42 @@ _sync_portable() { # <file> <keys>
 # keys, let the bundle's portable keys win.
 _sync_merge_conf() { # <portable-file>
     local keys=$SYNC_CONF_KEYS
-    { grep -vE "^(${keys// /|})=" "$PROXY_CONF" 2>/dev/null || true; cat "$1"; } > "$PROXY_CONF.new"
+    { grep -vE "^(${keys// /|})=" "$PROXY_CONF" 2>/dev/null || true; _sync_portable "$1" "$keys"; } > "$PROXY_CONF.new"
     mv -f "$PROXY_CONF.new" "$PROXY_CONF"; chmod 600 "$PROXY_CONF"
+}
+
+# Shared preferences are validated; release paths and learned quality stay local.
+_sync_preferences_valid() {
+    python3 - "$SCRIPT_DIR/libexec" "$1" <<'PYPREF'
+import sys
+sys.path.insert(0,sys.argv[1])
+from adaptive_config import preferences
+try:
+    preferences(sys.argv[2])
+except Exception:
+    raise SystemExit(1)
+PYPREF
+}
+
+_sync_unpack() { # <file|-> <destination>; never extract archive paths/links
+    python3 -c '
+import pathlib,sys,tarfile,shutil
+allowed={"merge.yaml","regions.conf","subs.conf","proxy.portable","proxy.conf","adaptive.json"}
+source=sys.stdin.buffer if sys.argv[1]=="-" else open(sys.argv[1],"rb")
+try:
+ with tarfile.open(fileobj=source,mode="r|gz") as archive:
+  seen=set(); total=0
+  for member in archive:
+   name=member.name[2:] if member.name.startswith("./") else member.name
+   if member.isdir() and name in (".",""): continue
+   if not member.isfile() or name not in allowed or name in seen: raise ValueError("unexpected member")
+   seen.add(name); total+=member.size
+   if member.size>16*1024*1024 or total>64*1024*1024: raise ValueError("oversize bundle")
+   with archive.extractfile(member) as content, (pathlib.Path(sys.argv[2])/name).open("wb") as output:
+    shutil.copyfileobj(content,output)
+except Exception:
+ raise SystemExit(1)
+' "$1" "$2"
 }
 
 sync_cmd() {
@@ -45,11 +79,11 @@ sync_cmd() {
         -h|--help|"")
             say "用法: proxy sync export [path] | import [path] | push <user@host> | pull <user@host>"
             say ""
-            say "多端同步 (对标 scripts secret push/pull)。同步: merge.yaml + regions.conf +"
+            say "多端同步 (对标 scripts secret push/pull)。同步: adaptive.json (共同偏好) + merge.yaml + regions.conf +"
             say "subs.conf + proxy.conf 可迁移键 (active_sub/sub_ua/sub_url/region_*/test_*)。"
             say "  export [path]   打包到文件 (省略=输出到 stdout)"
             say "  import [path]   应用打包内容 (文件/目录/省略=stdin)"
-            say "  push <user@host> 经 ssh 推送到远端并自动合并 (远端无需装 proxy)"
+            say "  push <user@host> 经 ssh 推送到远端并用已安装的 proxy 验证导入"
             say "  pull <user@host> 从远端拉取并应用到本机"
             say "不同步 (每台机器独立): config.yaml / bin / controller / secret / 节点选择"
             ;;
@@ -60,12 +94,13 @@ sync_cmd() {
 # build a bundle dir with merge.yaml/regions.conf/subs.conf/proxy.portable
 _sync_build() { # <dest-dir>
     local tmp=$1 have=0
-    for f in merge.yaml regions.conf subs.conf; do
+    for f in merge.yaml regions.conf subs.conf adaptive.json; do
         if [[ -f "$CONF_DIR/$f" ]]; then
             cp -f "$CONF_DIR/$f" "$tmp/$f" || return 1
             have=1
         fi
     done
+    [[ ! -f "$CONF_DIR/adaptive.json" ]] || _sync_preferences_valid "$CONF_DIR/adaptive.json" || return 1
     _sync_portable "$PROXY_CONF" "$SYNC_CONF_KEYS" > "$tmp/proxy.portable"
     [[ -s "$tmp/proxy.portable" ]] && have=1
     if (( ! have )); then
@@ -90,32 +125,34 @@ sync_export() { ( # [path] — bundle to file, or stdout
 
 sync_import() { ( # [path] — file / dir / stdin
     local src=${1:-} tmp cleanup=0
+    trap '[[ "$cleanup" == 1 ]] && rm -rf "$tmp"' EXIT
     if [[ -n "$src" && -d "$src" ]]; then
         tmp=$src
     elif [[ -n "$src" && -f "$src" ]]; then
         tmp=$(mktemp -d) || die "无法创建同步临时目录"; cleanup=1
-        tar xzf "$src" -C "$tmp" 2>/dev/null || die "无法解压: $src"
+        _sync_unpack "$src" "$tmp" || die "无法安全解包: $src"
     else
         tmp=$(mktemp -d) || die "无法创建同步临时目录"; cleanup=1
-        tar xzf - -C "$tmp" 2>/dev/null || die "stdin 内容不是有效打包"
+        _sync_unpack - "$tmp" || die "stdin 内容不是有效打包"
     fi
-    trap '[[ "$cleanup" == 1 ]] && rm -rf "$tmp"' EXIT
     mkdir -p "$CONF_DIR"
     local have=0 f
-    for f in merge.yaml regions.conf subs.conf proxy.portable; do
+    for f in merge.yaml regions.conf subs.conf adaptive.json proxy.portable; do
         [[ -f "$tmp/$f" ]] && have=1
     done
     (( have )) || die "打包内容无效 (无可同步文件)"
     [[ -f "$tmp/proxy.portable" ]] || : > "$tmp/proxy.portable"
 
+    [[ ! -f "$tmp/adaptive.json" ]] || _sync_preferences_valid "$tmp/adaptive.json" || die "自动选路偏好无效，未导入"
+
     # backup what we are about to replace
     local bak="$CONF_DIR/.sync-bak"; mkdir -p "$bak"
-    for f in merge.yaml regions.conf subs.conf proxy.conf; do
+    for f in merge.yaml regions.conf subs.conf adaptive.json proxy.conf; do
         [[ -f "$CONF_DIR/$f" ]] && cp -f "$CONF_DIR/$f" "$bak/$f"
     done
 
     local n=0
-    for f in merge.yaml regions.conf subs.conf; do
+    for f in merge.yaml regions.conf subs.conf adaptive.json; do
         if [[ -f "$tmp/$f" ]]; then
             cp -f "$tmp/$f" "$CONF_DIR/$f"; chmod 600 "$CONF_DIR/$f"; n=$((n+1))
         fi
@@ -163,28 +200,17 @@ sync_push() { ( # <user@host>
     trap 'rm -rf "$tmp"' EXIT
     _sync_build "$tmp" || return 1
     info "推送配置到 $host ..."
-    # transfer + merge entirely with remote-side bash/grep/awk (no proxy CLI needed)
+    # Let the remote CLI validate preferences and safely unpack the bundle.
     tar czf - -C "$tmp" . | ssh -o ConnectTimeout=10 "$host" '
         set -e
-        mkdir -p ~/.config/mihomo
-        cd ~/.config/mihomo
-        incoming=$(mktemp -d .sync-incoming.XXXXXX)
-        trap '\''rm -rf "$incoming"'\'' EXIT HUP INT TERM
-        tar xzf - -C "$incoming"
-        for f in merge.yaml regions.conf subs.conf; do
-            if [ -f "$incoming/$f" ]; then
-                cp -f "$incoming/$f" "$f"
-                chmod 600 "$f" 2>/dev/null || true
-            fi
-        done
-        if [ -s "$incoming/proxy.portable" ]; then
-            keys_re="active_sub|sub_ua|sub_url|region_interval|region_url|region_exclude|test_timeout|test_url|lan|pool"
-            { grep -vE "^(${keys_re})=" proxy.conf 2>/dev/null || true; cat "$incoming/proxy.portable"; } > proxy.conf.new
-            mv -f proxy.conf.new proxy.conf
-            chmod 600 proxy.conf
-        fi
-        echo "remote sync OK ($(hostname))"
-    ' || die "ssh 推送失败"
+        proxy_cli="$HOME/.local/bin/proxy"
+        [ -x "$proxy_cli" ] || proxy_cli="$HOME/scripts/proxy/proxy"
+        [ -x "$proxy_cli" ] || { echo "先在远端安装 proxy" >&2; exit 1; }
+        sync_bundle=$(mktemp)
+        trap '\''rm -f "$sync_bundle"'\'' EXIT HUP INT TERM
+        cat > "$sync_bundle"
+        "$proxy_cli" sync import "$sync_bundle"
+    ' || die "ssh 推送失败 (远端需要当前版本的 proxy)"
     ok "已推送"
     sync_summary
 ); }
@@ -199,9 +225,9 @@ sync_pull() { ( # <user@host>
     ssh -o ConnectTimeout=10 "$host" \
         'cd ~/.config/mihomo 2>/dev/null || exit 1
          files=
-         for f in merge.yaml regions.conf subs.conf proxy.conf; do [ -f "$f" ] && files="$files $f"; done
+         for f in merge.yaml regions.conf subs.conf adaptive.json proxy.conf; do [ -f "$f" ] && files="$files $f"; done
          [ -n "$files" ] && tar czf - $files 2>/dev/null' \
-        | tar xzf - -C "$tmp" 2>/dev/null || die "ssh 拉取失败"
+        | _sync_unpack - "$tmp" || die "ssh 拉取失败"
     if [[ -f "$tmp/proxy.conf" ]]; then
         _sync_portable "$tmp/proxy.conf" "$SYNC_CONF_KEYS" > "$tmp/proxy.portable"
         rm -f "$tmp/proxy.conf"

@@ -1,0 +1,12 @@
+{
+  "checks": {
+    "real_verified_tls_probe": true,
+    "active_controller_with_persistent_business_timeout_detected": true,
+    "business_timeout_does_not_restart_core": true,
+    "real_target_recovery_detected": true,
+    "broken_probe_is_monitor_error_not_core_failure": true,
+    "real_restart_limit_and_exit_status_recorded": true,
+    "real_exit_signal_recorded": true
+  },
+  "scope": "isolated real TLS stalls/recovery and separate user service restart limit; no production fault injection"
+}

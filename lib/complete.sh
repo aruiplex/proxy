@@ -14,7 +14,7 @@ _proxy_complete() {
     sub1="${COMP_WORDS[1]}"
     sub2="${COMP_WORDS[2]}"
 
-    local cmds="install init doctor upgrade uninstall start stop restart status log env on off toggle node use test ls nodes switch sub update refresh merge region tun check route monitor ui lan docker pool sync menu"
+    local cmds="install init doctor upgrade kernel auto quality feedback uninstall start stop restart status log env on off toggle node use test ls nodes switch sub update refresh merge region tun check route monitor ui lan docker pool sync menu"
 
     case "$COMP_CWORD" in
         1)
@@ -22,6 +22,8 @@ _proxy_complete() {
             ;;
         2)
             case "$sub1" in
+                auto)    COMPREPLY=( $(compgen -W "prepare" -- "$cur") ) ;;
+                kernel)  COMPREPLY=( $(compgen -W "prepare activate rollback status" -- "$cur") ) ;;
                 env)     COMPREPLY=( $(compgen -W "on off toggle show" -- "$cur") ) ;;
                 node)    COMPREPLY=( $(compgen -W "list test use" -- "$cur") ) ;;
                 region)  COMPREPLY=( $(compgen -W "list apply preset add rm set" -- "$cur") ) ;;

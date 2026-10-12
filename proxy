@@ -60,19 +60,21 @@ usage() {
     printf '\n'
 
     printf '  %s📦 安装%s\n' "${C_B}" "$n"
-    printf '  %-*s %s\n' "$w" "install [--via github|brew|gz:FILE] [--bin PATH]" "检测/下载 mihomo + 引导配置 + 装钩子"
+    printf '  %-*s %s\n' "$w" "install --manifest FILE | --bin PATH | --via ..." "检测/下载 mihomo + 引导配置 + 装钩子"
     printf '  %-*s %s\n' "$w" "init" "仅初始化配置 + 钩子 (已有二进制)"
-    printf '  %-*s %s\n' "$w" "upgrade" "升级 mihomo"
+    printf '  %-*s %s\n' "$w" "upgrade --manifest FILE | --version VERSION" "准备同来源内核升级 (不自动启用)"
+    printf '  %-*s %s\n' "$w" "kernel prepare | activate | rollback | status" "固定来源/版本，校验、启用及回退"
     printf '  %-*s %s\n' "$w" "uninstall" "移除钩子/软链 (配置保留)"
     printf '\n'
 
     printf '  %s🚀 运行%s\n' "${C_B}" "$n"
-    printf '  %-*s %s\n' "$w" "start | stop | restart" "启停 (nohup 直连二进制, brew 感知)"
+    printf '  %-*s %s\n' "$w" "start | stop | restart" "启停 (复用匹配的 systemd 监督器)"
     printf '  %-*s %s\n' "$w" "status" "运行/版本/出口节点/流量/端口/TUN/代理环境 + 自动诊断"
     printf '  %-*s %s\n' "$w" "log [-f]" "日志 (-f 跟随, 彩色高亮)"
     printf '\n'
 
     printf '  %s🌍 节点 / 订阅%s\n' "${C_B}" "$n"
+    printf '  %-*s %s\n' "$w" "auto prepare | quality | feedback HOST:PORT" "本机目标质量 / 反馈当前线路并重新自动选路"
     printf '  %-*s %s\n' "$w" "node list | test | use" "节点列表 / 测延迟后直切 / 模糊切换"
     printf '  %-*s %s\n' "$w" "region list | apply | preset | add | rm | set" "地区自动组 (HK/SG/JP/US 一键预设)"
     printf '  %-*s %s\n' "$w" "sub add | rm | list | use | show | refresh" "多订阅管理 (refresh 自动重放 merge)"
@@ -90,6 +92,7 @@ usage() {
     printf '  %-*s %s\n' "$w" "docker on | off | status" "Docker 走 mixed-port (容器/build, 订阅刷新后保留)"
     printf '  %-*s %s\n' "$w" "pool on | off | status | refresh" "节点池模式: 全机场节点归一化合并 + 无感自动切换"
     printf '  %-*s %s\n' "$w" "sync export | import | push | pull" "多端同步 merge/region/订阅/设置 (对标 scripts secret)"
+    printf '  %-*s %s\n' "$w" "health check | status | install | record" "低频 HTTPS 监测 / 故障证据 / 业务反馈"
     printf '  %-*s %s\n' "$w" "doctor" "环境体检"
     printf '\n'
 
@@ -114,6 +117,7 @@ case $cmd in
     init)           load install; proxy_init "$@" ;;
     doctor)         load install; proxy_doctor "$@" ;;
     upgrade)        load install; proxy_upgrade "$@" ;;
+    kernel)         load kernel; kernel_cmd "$@" ;;
     uninstall)      load install; proxy_uninstall "$@" ;;
 
     start)          load service; svc_start "$@" ;;
@@ -124,6 +128,8 @@ case $cmd in
 
     env)            load env; env_cmd "$@" ;;
 
+    auto)           load auto; auto_cmd "$@" ;;
+    quality|feedback) load quality; quality_cmd "$cmd" "$@" ;;
     node)           load node; node_cmd "$@" ;;
     merge)          load merge; merge_cmd "$@" ;;
     region)         load region; region_cmd "$@" ;;
@@ -132,6 +138,7 @@ case $cmd in
     check)          load check; proxy_check "$@" ;;
     route)          load route; route_cmd "$@" ;;
     monitor)        load monitor; monitor_cmd "$@" ;;
+    health)         load health; health_cmd "$@" ;;
     ui)             load ui; ui_cmd "$@" ;;
     lan)            load lan; lan_cmd "$@" ;;
     docker)         load docker; docker_cmd "$@" ;;

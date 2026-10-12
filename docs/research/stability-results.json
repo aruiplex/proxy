@@ -1,0 +1,22 @@
+{
+  "checks": {
+    "cold_start_preferred_region": true,
+    "long_verified_tls_stream": true,
+    "idle_does_not_close_same_tls_socket": true,
+    "same_tls_stream_resumes_after_idle": true,
+    "feedback_prefers_same_region": true,
+    "node_failure_uses_cross_region_after_same_region_exhausted": true,
+    "fault_and_feedback_keep_sibling_streams": true,
+    "all_candidates_failure_is_bounded": true,
+    "all_candidates_failure_keeps_established_streams": true,
+    "temporary_outage_recovers_after_cooldown": true,
+    "group_reload_preserves_existing_tls_stream": true,
+    "subscription_node_removal_affects_future_only": true
+  },
+  "stream_seconds": 60,
+  "idle_seconds": 60,
+  "all_failed_attempts": 3,
+  "all_failed_seconds": 0.002,
+  "tls_version": "TLSv1.3",
+  "scope": "verified fixture TLS/TCP; upstream outage for new connections only; no physical-link migration, TUN, UDP, QUIC or authenticated AI"
+}

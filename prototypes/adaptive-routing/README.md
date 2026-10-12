@@ -1,6 +1,6 @@
 # 目标级自动选路原型
 
-对应 [proxy #3](https://github.com/aruiplex/proxy/issues/3)。这是隔离验证用的 mihomo 补丁，尚未接入日常 proxy 命令或替换运行中的内核。
+对应 [proxy #3](https://github.com/aruiplex/proxy/issues/3)。固定原型补丁现已接入日常 `proxy auto/kernel/quality/feedback` 命令；本机已在 systemd 监督下切换到 `v1.19.32-adaptive.3`，直接回退指向 prototype.2，原 1.19.29 快照仍保留。源码后续修改的唯一权威来源为 [aruiplex/mihomo](https://github.com/aruiplex/mihomo/tree/adaptive/stable)。本目录的补丁、基线和结果冻结为原始 prototype.2 的可复现证据，不能当作新版本的验证摘要。新版本的实际切换与 Codex 验收见 [上线记录](../../docs/research/candidate3-deployment-results.json)。
 
 ## 已实现
 
@@ -61,7 +61,7 @@ python3 tests/integration/adaptive_checks.py --kernel /tmp/mihomo-adaptive
 
 输出二进制路径和保留源码目录必须不存在。可以用 `--source-archive /path/to/source.tar.gz` 复用本地源码包，仍会核对摘要。脚本先检查 `git apply --check`，运行新增策略的 race 测试及相关包回归，再构建，最后原子创建新二进制，拒绝覆盖已有文件。`--skip-tests` 仅用于构建，不代表验证通过。
 
-这组命令只产生实验二进制；日常内核激活与来源保留由 [proxy #4](https://github.com/aruiplex/proxy/issues/4) 后续处理。
+这组命令只产生实验二进制；内核来源管理、候选配置与日常反馈入口见 [使用说明](../../docs/usage/adaptive-routing.md)。
 
 ## 验证结果与限制
 
@@ -90,7 +90,7 @@ python3 tests/integration/protocol_probe.py \
   --protocol vmess-ws-early --failure-mode ws-reject
 ```
 
-UDP、QUIC、TUN、长时间空闲、Reality/Vision、其他插件/多路复用组合、跨机器状态、历史持久化及真实 Codex/Antigravity 业务尚未验证。部分协议没有目标连接确认，因此响应期失败仍可能需要应用重新建立连接；不能承诺将已中断的连接无缝迁移或重复请求。这些限制与待完成的内核来源管理意味着原型仍不能直接替换日常内核。
+已补充 60 秒 TLS 长流、60 秒空闲与恢复、全部候选故障有限尝试、组重载/节点移除测试；见 `../../docs/research/stability-results.json`。持续 Codex 对话计入用户观察到的真实业务使用，不证明同一 socket 复用；Antigravity 按用户要求暂不纳入本轮验收。UDP、QUIC、TUN、Reality/Vision、其他插件/多路复用组合、跨机器状态尚未验证。部分协议没有目标连接确认，因此响应期失败仍可能需要应用重新建立连接；不能承诺将已中断的连接无缝迁移或重复请求。日常试用应通过候选配置校验与版本回退流程启用；这些未验证范围仍需在实际应用中逐步确认。
 
 ## 之后如何同步上游
 

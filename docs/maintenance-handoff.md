@@ -33,7 +33,7 @@ fork 的 `adaptive/README.md`、`AGENTS.md`、`adaptive/maintenance.md` 以及 s
 ## 验证与持续集成
 
 - proxy `.github/workflows/management.yml` 在 PR/main 上验证当前管理代码、Shell 语法，使用 Python 3.12/3.14 与隔离控制器/服务夹具。独立 clone 中父仓库转发测试会跳过。
-- scripts `.github/workflows/proxy-management.yml` 检出固定子模块，验证 Shell 语法、`tests/scripts-proxy.sh` 和 proxy 管理测试，包含真实父入口转发。
+- scripts `.github/workflows/proxy-management.yml` 检出固定子模块，验证 CLI/Shell 入口与转发测试的语法、`tests/scripts-proxy.sh` 和 proxy 管理测试，包含真实父入口转发。`installation/` 等目录含旧安装备忘和占位命令，不属于本轮可执行 CLI 检查范围。
 - 本轮本机 51 项管理测试、脚本转发、Shell 语法和文档链接检查通过；CLI 夹具包含真实 TTY、只读默认入口、目标端口/大小写、歧义/认证/超时零反馈及错误码透传。
 - mihomo CI 使用 `adaptive/fixtures.json` 固定的 proxy 夹具提交验证内核；它与最新管理 CI 各自负责自己的范围。更新内核夹具 pin 是独立的受控变更。
 - [adaptive.3 上线验收](research/candidate3-deployment-results.json) 记录真实 HTTPS、同一 TLS 空闲后继续使用、实际 Codex 完整响应和工具调用结束后的独立检查。长流、故障恢复、策略组重载、不重放等历史受控证据在 [稳定性结果](research/stability-results.json) 和 fork 验证材料中。公开探测成功不代表登录后 AI 业务成功。

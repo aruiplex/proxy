@@ -1,27 +1,7 @@
 #!/usr/bin/env bash
 # proxy — a portable, self-contained CLI for managing the mihomo (Clash.Meta) core.
-#
-# All code lives in this directory (~/scripts/proxy/). Nothing is written elsewhere
-# except: a one-line pointer hook appended to ~/.bashrc (not code), and runtime
-# state under ~/.config/mihomo/. Designed to be cloned from GitHub and work on a
-# fresh machine: it detects/downloads mihomo, bootstraps config, and never assumes
-# sudo, an existing binary, or pre-existing config files.
-#
-# Usage: proxy <command> [args...]
-#   install/init   set mihomo up (detect → brew → GitHub download)
-#   start|stop|restart|status|log   lifecycle
-#   env on|off     toggle proxy env vars in the current shell (via .bashrc hook)
-#   node list|test|use   pick/switch exit nodes (controller API)
-#   merge list|add|rm|diff|apply   manage prepend rules (safe: validate then reload)
-#   region list|apply|add|rm|set   region auto-groups (fallback sticky, HK excluded, 60s checks)
-#   sub add|rm|list|use|show|refresh   multi-subscription management (refresh re-applies merge)
-#   tun on|off|--setup-nopasswd   transparent TUN (needs root)
-#   check          system proxy & connectivity check
-#   route <URL>    test proxy vs direct reachability for a URL
-#   monitor        live traffic monitor (controller /connections, auto-refresh)
-#   ui [on|off]    Web dashboard (metacubexd); on = bind 0.0.0.0 + secret (LAN-accessible)
-#   doctor         environment health check
-#   upgrade|uninstall
+# Installed shell hooks apply exports in the parent shell; runtime data uses
+# CONF_DIR. Daily commands live in usage(), maintenance commands in usage_all().
 set -o pipefail
 umask 077
 

@@ -14,14 +14,18 @@ _proxy_complete() {
     sub1="${COMP_WORDS[1]}"
     sub2="${COMP_WORDS[2]}"
 
-    local cmds="install init doctor upgrade kernel auto quality feedback uninstall start stop restart status log env on off toggle node use test ls nodes switch sub update refresh merge region tun check route monitor ui lan docker pool sync menu"
+    local cmds="next help install init doctor upgrade kernel auto quality feedback health uninstall start stop restart status log env on off toggle node use test ls nodes switch sub update refresh merge region tun check route monitor ui lan docker pool sync"
 
     case "$COMP_CWORD" in
         1)
+            [[ -n "$cur" ]] || cmds="next on off help"
             COMPREPLY=( $(compgen -W "$cmds" -- "$cur") ); return
             ;;
         2)
             case "$sub1" in
+                help|--help|-h) COMPREPLY=( $(compgen -W "--all" -- "$cur") ) ;;
+                next)    COMPREPLY=( $(compgen -W "--group --reason" -- "$cur") ) ;;
+                health)  COMPREPLY=( $(compgen -W "check status install uninstall record" -- "$cur") ) ;;
                 auto)    COMPREPLY=( $(compgen -W "prepare" -- "$cur") ) ;;
                 kernel)  COMPREPLY=( $(compgen -W "prepare activate rollback status" -- "$cur") ) ;;
                 env)     COMPREPLY=( $(compgen -W "on off toggle show" -- "$cur") ) ;;
@@ -60,6 +64,9 @@ _proxy_complete() {
             ;;
         3)
             case "$sub1" in
+                next|feedback)
+                    [[ "$prev" == --reason ]] && COMPREPLY=( $(compgen -W "timeout disconnect unusable unknown" -- "$cur") )
+                    ;;
                 node)
                     case "$sub2" in
                         use|test)

@@ -46,28 +46,34 @@ scripts install proxy
 proxy sub add default <URL>
 proxy sub refresh
 proxy on
-proxy status
+proxy
 ```
 
 `proxy on/off` 通过已安装的 Shell 包装函数更新当前及后续终端的代理环境。仅执行外部脚本无法改变父 Shell 环境；新装钩子后需要重新加载 Shell 配置或打开终端。
 
 ## 自动模式的日常入口
 
-先按 [自动选路与内核管理](docs/usage/adaptive-routing.md) 准备受支持的 fork 和候选配置。以下命令也可加 `scripts` 前缀：
+日常只需记住：
 
 ```bash
-proxy kernel status
-proxy quality
-proxy feedback 'example.com:443' --reason timeout
-proxy health status
-proxy update
+proxy                     # 简短状态与近期目标，直接退出
+proxy next example.com    # 该目标线路不好用，让后续连接重新选路
+proxy on                  # 开启终端代理
+proxy off                 # 关闭终端代理
+proxy help                # 简短帮助；help --all 查看维护命令
 ```
 
-反馈目标从 `quality` 的目标键中选择，报告该目标最近建立的线路不佳；程序为后续连接自动选择其他候选。它不是把所有服务固定到一个人工指定节点。质量记录描述可观测的建立/传输故障；无法从加密流量直接推断 AI 请求的语义结果或确定根因。
+裸 `proxy` 在终端和脚本中都显示状态，不进入菜单、不等待输入、不启动服务或主动探测业务。近期目标最多列出五项，表示各组最近成功建立的线路，不代表加密业务成功或当前所有连接共用该节点。控制器不可达时保留本机进程与代理设置的信息。
+
+先按 [自动选路与内核管理](docs/usage/adaptive-routing.md) 准备受支持的 fork 和候选配置。`next` 接受准确的域名或 `域名:端口`，默认端口 443；IPv6 用 `[地址]:端口`。程序查找有该目标成功建立记录的唯一 Adaptive 组，并提交节点反馈；它影响该目标的后续连接，已有健康连接继续保持，不会立即替换正在使用的会话，也不保证某个特定后继节点。其他目标继续按原策略选路。
+
+未知目标、多个组有相同目标或质量记录读取失败时，命令返回非零，不猜测或进入互动。先从裸命令显示的近期目标选择准确域名与端口；同一目标确实经过多个组时使用 `proxy next example.com --group NAME`。可加 `--reason timeout|disconnect|unusable|unknown`，默认 `unusable`。没有 Codex/ChatGPT 等硬编码别名，域名反馈也不扩展到相关子域。
+
+`scripts proxy` 和 `scripts proxy next example.com` 转发相同功能。`on/off` 需要已安装的 `proxy` Shell 函数同步当前终端；`scripts proxy on/off` 仅修改持久设置，子进程无法修改父 Shell。质量记录描述可观测的建立/传输故障，无法直接确定 AI 请求的语义结果或根因。
 
 候选默认接管 MATCH 所用代理策略的 TCP；其他策略在偏好 `policies` 中显式列出。原规则条件和明确 DIRECT/REJECT 保留，UDP 使用原配置策略。新目标由默认策略承接，无需为每个服务创建独立代码。实际覆盖送往代理的连接，不等于已经接管整机所有流量。
 
-`node use/test`、地区 fallback 组和旧交互菜单仍可用于普通配置兼容。主动 URL 测速不代表 AI 服务稳定性；旧菜单目前以手动选择为主，自动模式请使用上面的明确命令。
+`node use/test` 和地区 fallback 组保留用于普通配置兼容。旧嵌套菜单已删除，历史 `proxy menu` 入口只显示简短帮助。主动 URL 测速不代表 AI 服务稳定性；日常自动模式使用上面的简短 CLI。
 
 ## 升级、监督与回退
 
@@ -109,11 +115,11 @@ proxy sync export /path/to/private-settings.tar.gz
 
 ## 兼容命令
 
-`proxy --help` 是完整命令索引。现有入口包括：
+`proxy help --all`（或 `proxy --help --all`）是完整命令索引；`proxy status` 保留详细诊断，`quality/feedback` 保留准确目标键的低层操作。现有入口包括：
 
 - 节点与订阅：`node`、`region`、`sub`、`pool`。
 - 配置与应用接入：`merge`、`env`、`lan`、`docker`、`ui`。
-- 诊断与交互：`status`、`log`、`check`、`route`、`monitor`、`menu`、`doctor`。
+- 诊断：`status`、`log`、`check`、`route`、`monitor`、`doctor`。
 - 透明代理：`tun` 需要特权；当前自动选路验收没有覆盖 TUN/UDP/QUIC，特权启动也仍需单独验证监督与恢复。
 
 配置修改一般先备份、运行 `mihomo -t`，再热重载；控制器不可达时部分兼容命令会重启，因此会影响现有连接。语法校验成功不等于业务验收成功。
@@ -122,12 +128,12 @@ proxy sync export /path/to/private-settings.tar.gz
 
 2026-10-12 本机已切换到 `v1.19.32-adaptive.3`，完成真实公开 HTTPS、同一 TLS socket 空闲后续用、本机 Codex 完整响应和执行任务结束后的独立检查；详见 [上线证据](docs/research/candidate3-deployment-results.json)。这是一份有日期的验收记录，当前运行状态应重新查询。
 
-已验证 Linux/amd64 的 TCP 行为。公开探测不是登录后的 AI 请求，Codex 后端 socket 未独立归属；物理断线后的 TCP 无法迁移。Antigravity 按用户要求暂不纳入本轮验收。macOS 新管理流程、TUN/UDP/QUIC 及实际跨机器部署尚未验收。
+受控验证覆盖 Linux/amd64 TCP。公开探测不是登录后的 AI 请求，Codex 后端 socket 未独立归属；物理断线后的 TCP 无法迁移。用户持续使用 Antigravity、macOS、TUN/UDP/QUIC 并反馈目前较稳定，本轮按其要求不扩大验收；发现具体问题后再针对性修复。该使用反馈与受控验证范围分别记录，实际跨机器部署仍无验收记录。
 
-收尾审计确认菜单/补全、服务卸载和管理层 CI 仍待整合，记录于 [proxy #9](https://github.com/aruiplex/proxy/issues/9)。详情与建议顺序见 [维护审计](docs/research/maintenance-audit.md)。
+日常 CLI、健康命令补全和 proxy/scripts 管理层 CI 已整合，内核矩阵继续由 fork 承担。完整服务卸载仍由 [proxy #9](https://github.com/aruiplex/proxy/issues/9) 跟踪。接手维护或清理前阅读 [维护交接](docs/maintenance-handoff.md)，事实与剩余范围见 [维护审计](docs/research/maintenance-audit.md)。
 
 ```bash
-python3 -m unittest discover -s tests/unit -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/unit -v
 # 在 scripts 父仓库：
 bash tests/scripts-proxy.sh
 ```

@@ -86,10 +86,23 @@ python3 tests/integration/live_tls_acceptance.py \
 
 ## 查看质量与反馈
 
+日常使用无需进入菜单或记住组名：
+
+```bash
+proxy
+proxy next example.com
+proxy help
+```
+
+裸命令显示简短状态与最多五项近期目标，直接退出。`next` 将裸域名补为 `:443`，域名转小写；显式端口保持，IPv6 使用 `[地址]:端口`。程序查询各 Adaptive 组，只有一个组具有该准确目标的成功建立记录时才反馈。未知目标或任何候选组不可读时返回非零；多组歧义使用 `--group NAME` 明确指定，不用组内序号推断跨组的“最近”。反馈只影响该目标的后续连接，不关闭现有健康连接、不主动建立下一条连接或扩展到子域。
+
+需要完整质量记录、明确目标键与维护命令时：
+
 ```bash
 proxy quality
 proxy quality --target 'example.com:443' --json
 proxy feedback 'example.com:443' --reason timeout
+proxy help --all
 ```
 
 存在多个 adaptive 组时用 `--group NAME`。反馈目标从 quality 返回的键选择，反馈该目标最近建立的线路；后续连接自动重新选择，不固定节点，不关闭健康连接。可以使用 timeout、disconnect、unusable 或 unknown。质量记录可能因容量淘汰或进程重启或组配置重载消失；建立成功不证明加密应用请求成功。

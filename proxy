@@ -1,27 +1,7 @@
 #!/usr/bin/env bash
 # proxy — a portable, self-contained CLI for managing the mihomo (Clash.Meta) core.
-#
-# All code lives in this directory (~/scripts/proxy/). Nothing is written elsewhere
-# except: a one-line pointer hook appended to ~/.bashrc (not code), and runtime
-# state under ~/.config/mihomo/. Designed to be cloned from GitHub and work on a
-# fresh machine: it detects/downloads mihomo, bootstraps config, and never assumes
-# sudo, an existing binary, or pre-existing config files.
-#
-# Usage: proxy <command> [args...]
-#   install/init   set mihomo up (detect → brew → GitHub download)
-#   start|stop|restart|status|log   lifecycle
-#   env on|off     toggle proxy env vars in the current shell (via .bashrc hook)
-#   node list|test|use   pick/switch exit nodes (controller API)
-#   merge list|add|rm|diff|apply   manage prepend rules (safe: validate then reload)
-#   region list|apply|add|rm|set   region auto-groups (fallback sticky, HK excluded, 60s checks)
-#   sub add|rm|list|use|show|refresh   multi-subscription management (refresh re-applies merge)
-#   tun on|off|--setup-nopasswd   transparent TUN (needs root)
-#   check          system proxy & connectivity check
-#   route <URL>    test proxy vs direct reachability for a URL
-#   monitor        live traffic monitor (controller /connections, auto-refresh)
-#   ui [on|off]    Web dashboard (metacubexd); on = bind 0.0.0.0 + secret (LAN-accessible)
-#   doctor         environment health check
-#   upgrade|uninstall
+# Installed shell hooks apply exports in the parent shell; runtime data uses
+# CONF_DIR. Daily commands live in usage(), maintenance commands in usage_all().
 set -o pipefail
 umask 077
 
@@ -46,17 +26,17 @@ load() { # load <module-name>  -> sources lib/<name>.sh
     source "$f"
 }
 
-usage() {
+usage_all() {
     local w=48 n="${C_N}"
     printf '%sproxy%s — mihomo (Clash.Meta) 管理 CLI\n\n' "${C_B}${C_Y}" "$n"
 
     printf '  %s⚡ 常用快捷%s\n' "${C_B}" "$n"
     printf '  %-*s %s\n' "$w" "on | off | toggle" "开启 / 关闭 / 切换终端代理环境"
+    printf '  %-*s %s\n' "$w" "next DOMAIN[:PORT] [--group NAME]" "反馈指定目标线路；后续连接重新自动选路"
     printf '  %-*s %s\n' "$w" "use [<#|子串>]" "交互选择或按序号/子串切换节点 (同 node use)"
     printf '  %-*s %s\n' "$w" "test [GROUP]" "测节点延迟并即选切换 (同 node test)"
     printf '  %-*s %s\n' "$w" "ls | nodes" "查看当前节点列表 (同 node list)"
     printf '  %-*s %s\n' "$w" "refresh | update" "拉取刷新活跃订阅 (同 sub refresh)"
-    printf '  %-*s %s\n' "$w" "menu" "呼出交互式快捷控制面板"
     printf '\n'
 
     printf '  %s📦 安装%s\n' "${C_B}" "$n"
@@ -100,6 +80,30 @@ usage() {
         "${C_D}" "${C_B}" "$n" "${C_D}" "$n"
 }
 
+usage() {
+    if [[ "${1:-}" == --all ]]; then
+        shift
+        [[ $# == 0 ]] || die '用法: proxy help [--all]'
+        usage_all
+        return
+    fi
+    [[ $# == 0 ]] || die '用法: proxy help [--all]'
+    say 'proxy — 日常只需记住：'
+    say '  proxy                 简短状态与近期目标'
+    say '  proxy next 域名[:端口]  反馈该目标线路，后续连接重新选路'
+    say '  proxy on / proxy off   开关终端代理（通过已安装的 Shell 函数）'
+    say '  proxy help             这份帮助；help --all 查看维护命令'
+    say '域名默认端口 443；已有连接保持。'
+}
+
+overview() {
+    load service
+    local pid
+    pid=$(svc_pid --read-only 2>/dev/null) || pid=
+    load quality
+    quality_cmd overview --pid "$pid"
+}
+
 cmd=$1; shift || true
 case $cmd in
     # --- shortcuts ---
@@ -110,7 +114,7 @@ case $cmd in
     test)           load node; node_test "$@" ;;
     ls|nodes)       load node; node_list "$@" ;;
     refresh|update) load sub; sub_refresh "$@" ;;
-    menu)           load menu; proxy_menu "$@" ;;
+    menu)           usage "$@" ;; # legacy entry: the daily interface is the CLI
 
     # --- lifecycle & management ---
     install)        load install; proxy_install "$@" ;;
@@ -129,7 +133,7 @@ case $cmd in
     env)            load env; env_cmd "$@" ;;
 
     auto)           load auto; auto_cmd "$@" ;;
-    quality|feedback) load quality; quality_cmd "$cmd" "$@" ;;
+    quality|feedback|next) load quality; quality_cmd "$cmd" "$@" ;;
     node)           load node; node_cmd "$@" ;;
     merge)          load merge; merge_cmd "$@" ;;
     region)         load region; region_cmd "$@" ;;
@@ -147,7 +151,7 @@ case $cmd in
 
     _login)         load env; env_login ;;     # internal: called by .bashrc hook
 
-    "")             if [[ -t 0 && -t 1 ]]; then load menu; proxy_menu "$@"; else usage; fi ;;
-    -h|--help|help) usage ;;
-    *) die "未知命令: $cmd (运行 proxy 查看帮助)" ;;
+    "")             overview ;;
+    -h|--help|help) usage "$@" ;;
+    *) die "未知命令: $cmd (运行 proxy help 查看帮助)" ;;
 esac

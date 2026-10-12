@@ -10,6 +10,11 @@ quality_cmd() {
                 group=$2; shift 2 ;;
             --json) json=1; shift ;;
             -h|--help)
+                if [[ "$command" == next ]]; then
+                    say '用法: proxy next DOMAIN[:PORT] [--group NAME] [--reason timeout|disconnect|unusable|unknown]'
+                    say '默认端口 443；自动查找唯一有建立记录的组，已有连接保持。'
+                    return
+                fi
                 say '用法: proxy quality [--group NAME] [--target HOST:PORT] [--json]'
                 say '      proxy feedback HOST:PORT [--group NAME] [--reason timeout|disconnect|unusable|unknown]'
                 return ;;

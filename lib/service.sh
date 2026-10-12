@@ -51,14 +51,15 @@ _svc_find_pid() {
 }
 
 svc_pid() {
-    local pid
+    local pid readonly=0
+    [[ "${1:-}" == --read-only ]] && readonly=1
     pid=$(cat "$PID_FILE" 2>/dev/null)
     if _svc_pid_matches "$pid"; then
         printf '%s' "$pid"
         return 0
     fi
-    pid=$(_svc_find_pid) || { rm -f "$PID_FILE"; return 1; }
-    printf '%s\n' "$pid" > "$PID_FILE"
+    pid=$(_svc_find_pid) || { (( readonly )) || rm -f "$PID_FILE"; return 1; }
+    (( readonly )) || printf '%s\n' "$pid" > "$PID_FILE"
     printf '%s' "$pid"
 }
 

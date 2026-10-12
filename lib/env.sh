@@ -80,14 +80,14 @@ env_cmd() {
     case "$sub" in
         on)
             mkdir -p "$CONF_DIR"; printf 'on\n' > "$ENV_STATE"
-            ok "代理环境变量已开启 (当前 shell 及新 shell 已自动生效)"
+            ok "代理环境设置已开启 (已安装的 proxy Shell 函数会同步当前终端)"
             if ! detect_running; then
                 warn "⚠️ mihomo 核心未在运行，流量尚无法转发。可运行: proxy start"
             fi
             ;;
         off)
             mkdir -p "$CONF_DIR"; printf 'off\n' > "$ENV_STATE"
-            ok "代理环境变量已关闭 (当前 shell 及新 shell 已自动清除)"
+            ok "代理环境设置已关闭 (已安装的 proxy Shell 函数会同步当前终端)"
             ;;
         toggle)
             local cur; cur=$(cat "$ENV_STATE" 2>/dev/null)

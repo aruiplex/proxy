@@ -1,403 +1,152 @@
-# proxy — 便携式 mihomo (Clash.Meta) 管理 CLI
+# proxy — mihomo 管理与自动选路
 
-一个自包含的 **bash** 命令行工具。从 GitHub 克隆 `~/scripts/proxy/` 后，在**全新机器**上即可
-完整管理 mihomo 内核：检测/下载二进制、引导配置、启停、节点切换、多订阅管理、订阅刷新、
-规则合并、TUN 透明代理、代理环境变量注入。**所有代码只在 `~/scripts/proxy/`**；`~/.bashrc`
-或 `~/.zshrc` 只追加指回脚本的钩子函数（非代码），运行时状态写在 `~/.config/mihomo/`。
+`proxy` 管理 mihomo 的安装、配置、订阅、生命周期和本机质量反馈，也可以通过父仓库的 `scripts proxy ...` 调用。自动选路以连接稳定性为首要目标：按目标记录线路表现，优先同地区候选，必要时跨地区；反馈影响后续连接，已经正常传输的连接继续保持。
 
-设计原则：**不盲猜**——mihomo 没下就分级下载；没 sudo 就把 TUN 降级提示；无配置就从模板
-引导；订阅链接首次交互询问；控制器异常时自动诊断根因而非甩一句"重启"。
+## 实现分工
 
----
+本轮增加了管理模块和内核能力，保留了仍在使用的 Shell 功能，没有进行整个 CLI 的语言重写。
 
-## Quick Start（从零开始）
+| 层 | 实现与位置 | 职责 |
+| --- | --- | --- |
+| 命令和 Shell 集成 | Bash：`proxy`、`lib/*.sh` | 命令分发、环境变量与登录钩子、交互界面、订阅/规则/地区管理，以及系统命令协调 |
+| 管理模块 | Python 标准库：`libexec/*.py` | 固定内核来源与版本、配置候选生成、质量 API 客户端、监督器对接、HTTPS 监测与日志轮转 |
+| 连接内核 | Go：[aruiplex/mihomo](https://github.com/aruiplex/mihomo/tree/adaptive/stable) | 逐连接选路、建立阶段有界重试、质量观测与可选持久化 |
+| 父仓库 | [aruiplex/scripts](https://github.com/aruiplex/scripts) | 统一调用、代码更新与固定 proxy 子模块 |
 
-刚 clone 完这个 repo，按下面顺序走即可。前提：`bash` 4+、`curl`（绝大多数 Linux/macOS 自带）。
+Bash 模块是当前实现的一部分，不能直接作为“重构残留”删除。部分旧模块还嵌有 Python 片段；复杂配置和状态逻辑后续可以按模块迁入 `libexec/`，保持公开命令与 Shell 环境行为兼容。连接选路的改动直接维护在 Go fork 中。
 
-### 1. 克隆
+## 安装与首次使用
 
-```bash
-git clone <repo> ~/scripts/proxy
-```
-
-（把 `<repo>` 换成你的仓库地址；或直接把这个目录放到 `~/scripts/proxy/`。）
-
-### 2. 安装（检测/下载 mihomo + 引导配置 + 装钩子）
+需要 Bash 4+、Python 3.8+、curl，以及 awk/sed/grep 等常见工具；macOS 系统自带 Bash 可能需要升级。fzf 与 Homebrew 为可选依赖。实验内核的构建和平台要求见 fork 文档。
 
 ```bash
+git clone https://github.com/aruiplex/proxy.git ~/scripts/proxy
 ~/scripts/proxy/proxy install
 ```
 
-这一步会自动：
-
-- **找 mihomo 二进制**——按顺序：① PATH 与常见路径里已有的 mihomo；② **GitHub release**
-  下载（按 `uname -m` + CPU 微架构自动选 `amd64-v3`/`compatible`/`arm64` 资源），解压到 `~/.local/bin/mihomo`；③ `brew`（若已安装 brew 且 homebrew-core 有 `mihomo` formula，则 `brew install mihomo`）。
-  想指定来源：`proxy install --via github|brew|gz:FILE` 或 `--bin /path/to/mihomo`。
-- **引导配置**——首次无 `config.yaml` 时从模板复制（`mixed-port: 7890`、`external-controller`、
-  TUN 块、fake-ip DNS、空规则）。交互终端会提示粘贴订阅链接（可留空跳过）。
-- **登记到 `proxy.conf`**、软链 `~/.local/bin/proxy` → 本脚本（之后直接敲 `proxy`）、往 `~/.bashrc`
-  及 `~/.zshrc` 追加 Shell 函数包装 + 登录自启 + 0ms 启动优化钩子、`mihomo -t` 校验。
-- 如果你粘了订阅链接，会**顺手拉取并启动**（`sub refresh` 会校验→替换→重新前置 merge→热重载，
-  mihomo 没跑就自动起）。
-
-> 没有订阅链接？跳过提示，之后用：
-> ```bash
-> proxy sub add default <URL>   # 存一个命名订阅
-> proxy sub refresh             # 拉取并应用(会自动启动 mihomo)
-> ```
-
-### 3. 让当前 shell 走代理 + 验证
-
-### 3. 让当前 shell 走代理 + 验证
+已有 scripts 仓库时可以使用：
 
 ```bash
-proxy on          # 快捷开启代理环境变量（当前 shell 及之后所有新开终端瞬间无感生效！）
-proxy check       # 测: 系统代理状态 + 外网连通 + 出口 IP 与诊断
-proxy status      # 看: 进程/端口/控制器/出口节点
+scripts install proxy
 ```
 
-`proxy on`（或 `proxy env on`）把开关写入 `~/.config/mihomo/env.state`。通过自动注入的 Shell 包装函数，**当前 Shell 及未来新建终端无需手敲 `eval`，直接无感生效**；当代理关闭时，新开终端具备 0ms 开销快路，绝不拖慢终端启动。
+普通安装依次寻找已有 mihomo、官方 GitHub 发行、Homebrew，初始化配置及 Shell 钩子。它不会自动安装带 adaptive 策略的 fork。已存在的受管理安装使用 `kernel prepare/activate` 更换版本。
 
-### 4. 选个出口节点
+| 安装入口 | 行为 |
+| --- | --- |
+| `proxy install --via github` | 首次安装官方发行，优先兼容的 amd64 资产 |
+| `proxy install --via brew` | 首次使用 Homebrew mihomo |
+| `proxy install --bin /path/to/mihomo` | 校验并保存受管理的本地二进制副本 |
+| `proxy install --via gz:/path/to/mihomo.gz` | 校验并保存压缩资产 |
+| `proxy install --manifest /path/to/manifest.local.json` | 按明确的来源、版本和摘要安装候选 |
+
+无订阅时先添加并刷新；订阅 URL 包含私密信息，应保存在本机配置中：
 
 ```bash
-proxy ls                 # 快捷列出节点 (当前节点带 * [当前] 高亮)
-proxy test               # 测速全部节点 (动态进度 + 色彩分级 + 测完支持 fzf/序号直接切换)
-proxy use 5              # 按序号切
-proxy use "japan 03"     # 按子串(唯一则直接切; 多义弹菜单)
-proxy use                # 无参: 装了 fzf 模糊搜, 没装就序号菜单
+proxy sub add default <URL>
+proxy sub refresh
+proxy on
+proxy status
 ```
 
-### 完成。日常速查
+`proxy on/off` 通过已安装的 Shell 包装函数更新当前及后续终端的代理环境。仅执行外部脚本无法改变父 Shell 环境；新装钩子后需要重新加载 Shell 配置或打开终端。
+
+## 自动模式的日常入口
+
+先按 [自动选路与内核管理](docs/usage/adaptive-routing.md) 准备受支持的 fork 和候选配置。以下命令也可加 `scripts` 前缀：
 
 ```bash
-proxy                                            # 无参直接呼出交互式快捷控制面板 (或敲 proxy menu)
-proxy status                                     # 看状态
-proxy on / proxy off / proxy toggle              # 一键开/关/切换代理环境
-proxy use                                        # 换节点 (fzf/交互选择)
-proxy test                                       # 测延迟并选优
-proxy refresh                                    # 更新订阅 (刷新后 merge 规则自动重新前置)
-proxy merge add direct google.com                # 快捷加一条直连规则 (或无参交互添加)
-proxy region preset                              # 一键加载预设地区分组 (HK, SG, JP, US) 与排除规则
-proxy log -f                                     # 实时看彩色高亮日志
-proxy doctor                                     # 环境体检清单
+proxy kernel status
+proxy quality
+proxy feedback 'example.com:443' --reason timeout
+proxy health status
+proxy update
 ```
 
----
+反馈目标从 `quality` 的目标键中选择，报告该目标最近建立的线路不佳；程序为后续连接自动选择其他候选。它不是把所有服务固定到一个人工指定节点。质量记录描述可观测的建立/传输故障；无法从加密流量直接推断 AI 请求的语义结果或确定根因。
 
-## 安装方式
+候选默认接管 MATCH 所用代理策略的 TCP；其他策略在偏好 `policies` 中显式列出。原规则条件和明确 DIRECT/REJECT 保留，UDP 使用原配置策略。新目标由默认策略承接，无需为每个服务创建独立代码。实际覆盖送往代理的连接，不等于已经接管整机所有流量。
 
-`proxy install` 自动选级；也可显式指定：
+`node use/test`、地区 fallback 组和旧交互菜单仍可用于普通配置兼容。主动 URL 测速不代表 AI 服务稳定性；旧菜单目前以手动选择为主，自动模式请使用上面的明确命令。
 
-| 命令 | 含义 |
-|------|------|
-| `proxy install` | 自动：已有 mihomo → GitHub Release → brew |
-| `proxy install --via github` | 强制从 GitHub release 下载（arch 自适应） |
-| `proxy install --via brew` | 强制 `brew install mihomo` |
-| `proxy install --via gz:/path/mihomo.gz` | 用你已有的 gz 包解压安装 |
-| `proxy install --bin /path/mihomo` | 接管一个已存在的二进制，不下载 |
+## 升级、监督与回退
 
-GitHub 下载按 CPU 选 asset：amd64 先看是否支持 AVX2（v3 微架构），不支持则用 `compatible`
-（兼容更广）；arm64/armv7 选对应资源。
+- `scripts update` 更新脚本代码和固定子模块提交。
+- `proxy update` 刷新订阅并重放已启用的选路偏好。
+- `proxy upgrade --manifest FILE` 只准备同来源的固定版本；官方来源也可用 `--version VERSION`。
+- Homebrew 更新官方二进制，当前受管理的 fork 副本不会随之更换。
+- fork CI 构建/验证、发布候选与本机启用分别执行。尚未发布的 CI 资产使用同目录的 `manifest.local.json`。
 
----
-
-## 命令一览
-
-### ⚡ 常用快捷指令
-
-| 快捷命令 | 等价原命令 | 说明 |
-|----------|------------|------|
-| `proxy on` / `off` / `toggle` | `proxy env on` / `off` / `toggle` | 开启/关闭/切换终端代理环境变量 |
-| `proxy use [<#\|子串>]` | `proxy node use [<#\|子串>]` | 交互选择或按序号/子串切换节点 |
-| `proxy test [GROUP]` | `proxy node test [GROUP]` | 测节点延迟并即选切换 |
-| `proxy ls` / `proxy nodes` | `proxy node list` | 查看当前节点列表（高亮当前节点） |
-| `proxy refresh` / `proxy update` | `proxy sub refresh` | 拉取刷新活跃订阅 |
-| `proxy menu` / `proxy` | - | 交互式快捷控制面板（无参回车直接进入） |
-
-### 🛠️ 完整管理命令
-
-| 命令 | 说明 |
-|------|------|
-| `proxy install [--bin PATH] [--via github\|brew\|gz:FILE]` | 分级安装/接管 + 初始化 |
-| `proxy init` | 仅初始化配置 + 钩子（已有二进制） |
-| `proxy start \| stop \| restart` | 启停（nohup 直连二进制；brew 感知：先 `brew services stop`，清外来实例，精确匹配不误杀） |
-| `proxy status` | 运行状态/版本/运行时长/出口节点/活跃连接/累计流量/端口/TUN/代理环境；**控制器 ↓ 时自动诊断**（见故障排查） |
-| `proxy log [-f]` | 日志（`-f` 跟随，支持关键字色彩高亮） |
-| `proxy env on \| off \| toggle \| show` | 代理环境变量开关（当前 Shell 及新 Shell 自动无感生效，带 0ms 启动开销优化） |
-| `proxy node list \| test [GROUP] \| use [<#\|子串>]` | 节点：`list` 带序号且高亮当前节点；`test` 动态进度+色彩分级+fzf直切；`use` 序号/子串/无参交互 |
-| `proxy merge list \| add '<RULE>' \| add direct\|proxy\|reject <domain> \| rm ['<PAT>'] \| diff \| apply` | 前置规则管理（安全，支持无参交互添加/删除） |
-| `proxy region list \| apply \| preset \| add <name> ['<regex>'] \| rm [name] \| set` | 地区自动组（支持快捷别名如 HK/SG/US/JP、一键预设、无参交互删除与排除规则） |
-| `proxy sub add <name> <URL>` | 添加/更新命名订阅 |
-| `proxy sub rm [name] \| list \| show [name]` | 删除（支持交互选择） / 列出（活跃标记，token 脱敏）/ 查看 |
-| `proxy sub use [name] [--no-refresh]` | 切换活跃订阅（支持交互选择）并立即拉取应用 |
-| `proxy sub refresh [name]` | 刷新活跃（或指定）订阅；自动重新前置 merge |
-| `proxy sub set <URL>` | 旧用法：存为 default + 激活 + 拉取 |
-| `proxy tun on \| off` | 透明 TUN（需 sudo/root；不提供不安全的免密用户二进制执行） |
-| `proxy route <URL> [--json]` | URL 路由检测：分别通过代理和直连访问目标 URL，对比连通性与延迟；`--json` 输出机器可读结果 |
-| `proxy monitor [--interval <秒>] [--sort down\|up\|name] [--once]` | 实时流量监控：持续显示速率/累计流量/活动连接表（主机、规则、链路、上下行），Ctrl-C 退出；`--once` 单帧输出供脚本使用 |
-| `proxy ui [--secret [VALUE]\|--no-secret] \| off \| status` | Web 仪表盘 (metacubexd)：默认生成随机密码并改绑 `0.0.0.0`；`--no-secret` 明确启用危险的无密码模式；`off` 撤回为仅本机；`status` 查看当前状态 |
-| `proxy lan on \| off \| status` | allow-lan 开关：局域网设备用本机作代理（持久化，订阅刷新后保留） |
-| `proxy pool on \| off \| status \| refresh` | 节点池模式：全机场节点语义归一化合并 + mihomo fallback 无感自动切换 |
-| `proxy sync export \| import \| push \| pull` | 多端配置同步（merge/region/订阅/可迁移设置，对标 `scripts secret push/pull`） |
-| `proxy check` | 系统代理状态 + 外网多源连通性与故障诊断建议 |
-| `proxy doctor` | 环境健康体检清单仪表盘 |
-| `proxy upgrade` | 按 install_method 升级 mihomo |
-| `proxy uninstall` | 移除钩子/软链（配置保留） |
-
----
-
-## 代理环境变量注入
-
-子进程无法直接改父 shell 的环境变量。本工具在 `~/.bashrc` 及 `~/.zshrc` 注入 `proxy()` Shell 函数包装以及极速开销检测：
-
-- **无感实时生效**：执行 `proxy env on` 或 `off` 时，Shell 函数会在当前 Shell 内直接更新 `http_proxy`/`https_proxy`/`all_proxy`（+ 大写变体及 `no_proxy`），无需手动复制执行 `eval`！
-- **0 毫秒启动开销**：当代理开关关闭或未初始化时，新打开的终端会直接跳过后台子进程检测，零延迟。
-- 地址取自 `proxy.conf` 的 `proxy_addr`，否则解析 `config.yaml` 的 `mixed-port`，默认 `127.0.0.1:7890`。
-
-**Tab 补全**（bash）：钩子块同时注册 `_proxy_complete`——命令树 + 子命令 + 动态候选
-（`node use/test` 的节点名走控制器、`sub` 的订阅名读 `subs.conf`、`merge rm` 的规则读 `merge.yaml`；
-节点/规则为子串匹配，兼容 emoji 旗帜前缀）。zsh 无 `complete` 内建命令，守卫自动跳过
-（启用 `bashcompinit` 后可复用）。
-
----
-
-## 多订阅管理
-
-订阅存为 `name<TAB>url` 于 `subs.conf`（权限 600，含机场 token）。一个为"活跃"，`use`/`refresh`
-拉取→校验→替换 config→重新前置 merge→应用。
-
-**格式**：Clash YAML 直接使用；base64 / v2rayN 节点列表（ss、trojan、vmess、vless、
-hysteria2）**自动转换**为完整配置（fake-ip DNS + 自动选择/故障转移/节点选择组 + 国内直连规则），
-无需 GUI 客户端中转。拉取请求 UA 为 `mihomo/<版本>`（可在 `proxy.conf` 设 `sub_ua` 覆盖；
-个别后端只认特定 UA）。转换/刷新时自动剔除机场信息伪节点（客服/官网/剩余流量等——此类
-假节点排在组首位时会导致流量全死）并把 `external-controller` 归一化为本工具配置的地址。
+准备不会重启运行中的内核。核对当前状态、准备兼容配置与独立恢复保护后，在维护窗口执行：
 
 ```bash
-proxy sub add airportA <URL>     # 添加
-proxy sub add airportB <URL>     # 多个订阅
-proxy sub list                   # 列出, 活跃标 *, token 脱敏
-proxy sub use airportB          # 切到 B 并立即拉取应用
-proxy sub refresh airportA      # 只刷新指定订阅(不切换活跃)
-proxy sub show airportA         # 看完整 URL(需用时)
-proxy sub rm airportB           # 删除
+proxy stop
+proxy kernel activate
+proxy start
 ```
 
-旧用法 `proxy sub set <URL>` 等同于存为 `default` + 激活 + 拉取。
+验收失败时执行 `proxy stop` → `proxy kernel rollback` → `proxy start`。回退恢复上一版匹配的二进制、配置、偏好和缓存；它只有一层当前回退指针，发行目录中的更早快照不会自动轮流成为回退版本。
 
----
+Linux 已有且 PIDFile 匹配当前配置目录的 `proxy-mihomo.service` 时，启停命令复用该用户服务。没有匹配服务时仍使用独立进程方式。工具会话中的普通 nohup 可能随会话清理结束；登录钩子也不能代替长期监督器。普通安装不会自动创建 mihomo 主服务；`health install` 安装的是监测 timer。
 
-## 多端同步（sync）
+启动命令返回后须在另一次调用中验证真实 TLS/HTTP、持续 PID、监听端口所有权及控制器，不能仅凭启动成功宣布可用。切换会中断现有连接，允许应用重新连接。完整验收流程见使用说明。
 
-把**用户资产**同步到其他机器（对标 `scripts secret push/pull`）：
+## 监测、质量记录与同步
 
 ```bash
-proxy sync export sync.tgz          # 打包: merge.yaml + regions.conf + subs.conf + proxy.conf 可迁移键
-proxy sync import sync.tgz          # 应用 (文件/目录/stdin 均可)
-proxy sync push user@other_machine  # 经 ssh 推送并自动合并 (远端无需装 proxy CLI)
-proxy sync pull user@other_machine  # 从远端拉取并应用
+proxy health install
+proxy health check
+proxy health record --app codex --outcome complete
+proxy health uninstall
+proxy sync export /path/to/private-settings.tar.gz
 ```
 
-**同步**：merge 规则、region 组、订阅列表（含 token）、`active_sub`/`sub_ua`/`region_*`/`test_*`/`lan`
-（allow-lan 开关）。
-**不同步**（每台机器独立）：`config.yaml`（订阅刷新生成）、`bin`/`install_method`（路径不同）、
-`controller`/`secret`（绑定本机配置状态）、**节点选择**（只存在运行中内存，重启即重置，
-且各机器位置不同应自选出口）、`env.state`/日志/UI 目录。导入后自动重新应用 merge/region；
-订阅不自动刷新（新机器可能还没网），提示手动 `proxy sub refresh`。token 安全策略与
-`secrets.sh` 一致（mode 600，传输走 ssh）。
+监测每五分钟探测三个公开 HTTPS 目标，记录确认的故障/恢复、结构化退出与匿名线路证据。偶发公开探测失败不会重启内核。日志按大小与期限轮转，历史诊断归档单独保留。详见 [健康监测](docs/usage/health.md)。
 
----
+质量持久化为可选配置，默认未启用；新 fork 支持 TTL、容量、原子写入、节点身份变化失效与坏文件冷启动。共享的是选路偏好和订阅配置，质量记录、缓存、内核路径及控制器认证各机器独立。同步包仍含订阅信息，应私密保存。
 
-## 节点池模式（pool）
+`proxy uninstall` 当前主要移除 Shell 钩子与自有软链，并保留配置；它不是完整的服务卸载。需要退役部署时，先核对所有权，单独禁用监测 timer 和自有主服务，保留诊断及回退证据。不要直接删掉仍被 unit 引用的源码目录。
 
-把**所有机场的节点合并进一个池**，节点名经过**语义归一化**（旗帜/`[一倍电信]`/`|1倍|V1` 等噪音剥离，
-国家别名映射 + 顺序编号），用户完全不关心流量来自哪个机场：
+## 兼容命令
 
-```
-🇸🇬Singapore 01 / 新加坡01 / [一倍电信]HK 01 / 🇺🇸 美国G1|实验|1倍|V1
-→ 新加坡01 / 新加坡02 / 香港01 / 美国01 ...
-```
+`proxy --help` 是完整命令索引。现有入口包括：
 
-生成的池配置（`proxy pool refresh` 拉取全部订阅 → base64 自动转换 → 净化 → 合并 → 校验 → 热重载，
-部分机场失败时保留其上一轮节点并告警）：
+- 节点与订阅：`node`、`region`、`sub`、`pool`。
+- 配置与应用接入：`merge`、`env`、`lan`、`docker`、`ui`。
+- 诊断与交互：`status`、`log`、`check`、`route`、`monitor`、`menu`、`doctor`。
+- 透明代理：`tun` 需要特权；当前自动选路验收没有覆盖 TUN/UDP/QUIC，特权启动也仍需单独验证监督与恢复。
 
-```
-节点选择 (select):  [🚀 自动, 新加坡-自动, 香港-自动, ..., 其他-自动]   ← 入口
-🚀 自动 (fallback): [新加坡-自动, 香港-自动, ..., 其他-自动]            ← 跨地区无感故障转移
-新加坡-自动 (url-test): 新加坡01~NN（include-all + filter）
-其他-自动 (url-test): 无法识别的节点（兜底）
-rules: MATCH,节点选择（转换配置默认不依赖联网下载 MMDB）
-```
+配置修改一般先备份、运行 `mihomo -t`，再热重载；控制器不可达时部分兼容命令会重启，因此会影响现有连接。语法校验成功不等于业务验收成功。
 
-**无感切换**：入口默认指向 `🚀 自动`（fallback 链）——某地区组全节点 timeout（机场耗尽/停用是
-账号级故障，特征就是全组同时失败）→ mihomo 自动让位下一个健康组，无守护进程、无感知。
-机场级故障被地区组吸收：一家机场挂了，新加坡组里其他机场的节点仍活。
+## 验证与维护边界
+
+2026-10-12 本机已切换到 `v1.19.32-adaptive.3`，完成真实公开 HTTPS、同一 TLS socket 空闲后续用、本机 Codex 完整响应和执行任务结束后的独立检查；详见 [上线证据](docs/research/candidate3-deployment-results.json)。这是一份有日期的验收记录，当前运行状态应重新查询。
+
+已验证 Linux/amd64 的 TCP 行为。公开探测不是登录后的 AI 请求，Codex 后端 socket 未独立归属；物理断线后的 TCP 无法迁移。Antigravity 按用户要求暂不纳入本轮验收。macOS 新管理流程、TUN/UDP/QUIC 及实际跨机器部署尚未验收。
+
+收尾审计确认菜单/补全、服务卸载和管理层 CI 仍待整合，记录于 [proxy #9](https://github.com/aruiplex/proxy/issues/9)。详情与建议顺序见 [维护审计](docs/research/maintenance-audit.md)。
 
 ```bash
-proxy pool on        # 开启并构建节点池（聚合全部订阅）
-proxy pool refresh   # 重新拉取全部订阅重建池
-proxy pool status    # 池状态: 订阅节点数 / 地区组实时状态 / 当前出口
-proxy pool off       # 退回单订阅模式 (proxy sub use 管理)
+python3 -m unittest discover -s tests/unit -v
+# 在 scripts 父仓库：
+bash tests/scripts-proxy.sh
 ```
 
-- region 定义（`regions.conf` 正则）作用在**归一化后的名字**上，两种模式无需改动
-- pool 模式下 `proxy region add/rm/set/preset` 自动触发池重建；`proxy sub use/refresh` 给出提示
-- `node test` 20 节点一批并行测速；`node use 新加坡` 直接子串匹配规范化名
-- 自定义 region 正则若依赖被剥离的标签（`优化`/`家宽`/倍率）将无法命中——池模式下的名字只有地区语义
-- 可选自动化：cron 定时 `proxy pool refresh`（如每天一次）
-
----
-
-## 规则合并（merge）
-
-把自定义规则**幂等地前置**到 `config.yaml` 的 `rules:` 顶部，先于订阅规则命中。订阅刷新覆盖
-config 后，`proxy sub refresh` 会自动重新前置。
-
-```bash
-# 支持快捷域名规则语法：
-proxy merge add direct google.com         # 自动扩展为 DOMAIN-SUFFIX,google.com,DIRECT
-proxy merge add proxy github.com          # 自动扩展为 DOMAIN-SUFFIX,github.com,PROXIES
-proxy merge add reject ads.com            # 自动扩展为 DOMAIN-SUFFIX,ads.com,REJECT
-
-# 也支持完整 Clash 规则语法：
-proxy merge add 'DOMAIN-SUFFIX,hf-mirror.com,DIRECT'
-
-proxy merge list            # 查 merge.yaml 里的规则
-proxy merge diff            # 对比 merge.yaml 与 config 已注入块
-proxy merge apply           # 手动重新注入+校验+重载
-proxy merge rm 'google.com'  # 按子串删行
-```
-
-安全：注入前自动探测原 `rules:` 缩进、写入临时文件、`mihomo -t` 校验通过才替换，失败还原、
-绝不杀进程。详见下「安全模式」。
-
----
-
-## 地区自动组（region）
-
-在订阅的大列表之上生成**按地区自动故障转移**的组。支持内置快捷别名（无需手写 Regex）与一键预设：
-
-```bash
-# 方式 1：一键预设（推荐，自动生成 HK, SG, JP, US 组及默认排除规则）
-proxy region preset
-
-# 方式 2：使用内置快捷别名添加（无需手写复杂的正则表达式）
-proxy region add SG                       # 自动匹配新加坡节点
-proxy region add US                       # 自动匹配美国节点
-proxy region add HK                       # 自动匹配香港节点
-proxy region add JP                       # 自动匹配日本节点
-proxy region add TW / KR / UK             # 支持台湾、韩国、英国等预设
-
-# 方式 3：自定义正则（面向特殊需求）
-proxy region add 自定义组 '(?i)(custom|regex)'
-
-# 极简排除规则设置 (exclude)
-proxy region set exclude default          # 一键排除 HK 及机场流量/官网提示节点
-proxy region set exclude hk               # 排除 HK 节点
-proxy region set exclude clear            # 清空排除规则
-
-proxy node use '🚀 自动'                  # 把选择组切到地区链
-proxy region list                         # 查看地区、设置、各组实时状态
-```
-
-实现要点：地区组用 `include-all: true` + `filter` 正则，**不枚举节点名**，订阅刷新改名/增删
-节点都自动适应；`sub refresh` 会自动重放（与 merge 同钩子）。地区定义在
-`~/.config/mihomo/regions.conf`（`name<TAB>regex` 每行一个），设置存 `proxy.conf` 的
-`region_interval` / `region_url` / `region_exclude`。
-
----
-
-## TUN 透明代理（可选）
-
-TUN 让所有流量（不止配了代理变量的程序）透明走 mihomo，需 root（`cap_net_admin` + 路由）。
-
-```bash
-proxy tun on               # 写 tun.enable=true, sudo 启动(交互输密码)
-proxy tun off              # 关 TUN, 普通用户重启
-```
-
-无 sudo 时 `tun` 降级提示。TUN 开启后环境变量注入可省（全局透明），但开关仍兼容。
-
----
-
-## 安全模式
-
-贯穿所有改 `config.yaml` 的操作（`sub refresh` / `merge apply` / `tun on`）：
-
-1. **备份** → `config.yaml.bak`；
-2. 写临时文件 → **`mihomo -t` 校验**；
-3. 通过才替换，**校验失败（400）绝不杀进程**（运行中的 mihomo 继续用旧配置）；
-4. 应用：控制器热重载 `PUT /configs`；若控制器不可达（000，即运行实例没开
-   `external-controller`），**自动 stop+start** 把新配置真正加载——否则会出现"看似成功、
-   实则没生效"（配置在磁盘、运行实例还用旧的）。因配置已先过 `mihomo -t`，此重启是安全的。
-5. 不生成 NOPASSWD 规则：用户可写的 mihomo 二进制不能安全地获得免密 root 执行权限。
-
----
-
-## 故障排查
-
-**`proxy status` 显示 `控制器 ↓`**：监听端口里有 `7890` 没有 `9090` = 运行中的 mihomo 没开
-`external-controller`。此时 `proxy status` 会自动诊断那个进程：它的 `-f` 配置是不是本工具的、
-有没有 `external-controller` 字段，并给精确修法。常见原因：
-
-- **残留/外来实例**（之前手动起的、或 brew 装好时附带的默认配置跑起来的）占 7890、没开 9090
-  → `proxy restart` 会停掉它并用本工具配置重起（brew 感知：先 `brew services stop`）。
-- **配置缺 `external-controller` 字段** → 按诊断提示补：
-  `printf '\nexternal-controller: 127.0.0.1:9090\n' >> ~/.config/mihomo/config.yaml && proxy restart`
-- **9090 被占** → `ss -ltnp | grep 9090` 查谁占了。
-- **`secret` 不匹配** → `proxy.conf` 的 `secret` 与 `config.yaml` 的 `secret:` 不一致；清掉
-  `proxy.conf` 里 `secret=` 行或两边对齐。
-
-**`proxy sub use` 看似成功但没生效**：旧版热重载失败只提示"下次 start 生效"；现版自动重启应用。
-仍异常 → `proxy status` 看控制器是否 ↑。
-
-**`proxy node list` 报"未找到节点组"**：先确认控制器 ↑（`proxy status`）；控制器 ↓ 时会明确
-报"控制器不可达"而非误报无组。控制器 ↑ 后仍无组 → 订阅 `proxy-groups` 为空或非
-Selector/URLTest 类型，查 `config.yaml`。
-
-**机器重启后代理没了**：mihomo 不开机自启靠 `systemd --user`（多数服务器无）；本工具用
-`~/.bashrc` / `~/.zshrc` 登录钩子——登录首个交互式 shell 时若 mihomo 没跑会静默自启。
-
----
+内核 race、协议/不重放、长流/空闲与持久化矩阵由 fork CI 运行，使用 `adaptive/fixtures.json` 固定的夹具提交，不会自动验证当前全部管理 CLI。
 
 ## 文件布局
 
-```
-~/scripts/proxy/                 # 全部代码（仅此目录）
-  proxy                          # 主入口（子命令分发）
-  lib/{common,detect,install,service,env,merge,node,sub,tun,check,region,route,monitor,ui}.sh
-  templates/{config.minimal.yaml,merge.yaml}
-  README.md
-~/.config/mihomo/                # 运行时状态(非代码)
-  config.yaml / config.yaml.bak  # mihomo 配置 + 备份
-  proxy.conf                     # 本工具设置 (mode 600): bin/install_method/controller/secret/active_sub/...
-  subs.conf                      # 多订阅 (mode 600, name<TAB>url, 含机场 token)
-  merge.yaml                     # 前置规则
-  env.state                      # on/off
-  mihomo.log
-~/.local/bin/proxy -> ~/scripts/proxy/proxy   # PATH 软链
-~/.bashrc / ~/.zshrc             # +钩子函数块 (proxy 函数包装 + 0ms 启动检测)
+```text
+proxy                          命令分发
+lib/                           Bash 功能模块，部分含 Python 片段
+libexec/                       Python 管理模块
+templates/                     初始配置和偏好示例
+tests/unit/                    管理层行为测试
+tests/integration/             隔离内核/监测夹具及显式运行的真实 TLS 验收
+docs/usage/                    操作流程
+docs/research/                 有日期的诊断、验收和维护记录
+prototypes/adaptive-routing/    冻结的 prototype.2 补丁与复现证据
+AGENTS.md                      维护 agent 的入口
 ```
 
----
-
-## 依赖
-
-- 必需：`bash` 4+、`curl`、`awk`、`sed`、`grep`。
-- JSON 解析（`status`/`node`/`sub`）：`python3`（近通用）；缺则相应命令提示安装。
-- 安装可选：`brew`（tier-3 安装）、`jq`（加速 JSON，可选）、`fzf`（`proxy node use` 交互模糊选择，可选；无则用序号菜单）。
-- TUN：`sudo` + `python3`；无 sudo 时 `tun` 命令降级提示。
-
----
-
-## 卸载
-
-```bash
-proxy uninstall          # 移除 .bashrc/.zshrc 钩子 + 软链; 配置目录保留(会问是否同时删二进制)
-```
-
-手动：`rm -rf ~/scripts/proxy ~/.local/bin/proxy`；保留或删 `~/.config/mihomo/` 视需要。
-
-## 自动选路与可回退内核管理
-
-实验自动选路的准备、质量查询、目标反馈、版本升级与多机偏好同步见 [使用说明](docs/usage/adaptive-routing.md)。`proxy upgrade` 现在只准备明确版本，不自动启用或改变来源。
+运行时状态默认在 `$HOME/.config/mihomo`，可用 `CONF_DIR` 指定：配置/订阅、`kernels/`、`health/`、`logs/` 及可选 `adaptive-quality/`。这些状态含私密信息，保存在本机。当前内核源码以独立 mihomo fork 为权威，原型目录的旧补丁保持冻结。

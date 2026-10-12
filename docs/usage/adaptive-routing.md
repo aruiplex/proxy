@@ -20,8 +20,8 @@
 ```json
 {
   "schema": 1,
-  "source": {"id": "my-kernel-release", "kind": "custom"},
-  "version": "v1.19.32-adaptive-prototype.2",
+  "source": {"id": "aruiplex/proxy-adaptive", "kind": "custom"},
+  "version": "v1.19.32-adaptive.3",
   "platform": {"os": "linux", "arch": "amd64"},
   "asset": {
     "path": "/path/to/mihomo",
@@ -37,20 +37,18 @@
 
 ## 准备自动选路
 
-先按照 `prototypes/adaptive-routing/README.md` 构建已验证版本。导出 manifest 时必须与保存的验证摘要一致，不能把任意同名文件冒充成已验证原型：
+日常版本使用 [mihomo fork](https://github.com/aruiplex/mihomo) 已通过验收的 CI 资产，下载同目录的二进制、manifest.local.json、validation.json 和 SHA256SUMS，并验证摘要及通过状态。发行 URL 只有发布后才有效；未发布的 CI 资产使用本地 manifest。原型目录仅用于复现冻结的 prototype.2，不是后续发行来源。
 
 ```bash
-python3 prototypes/adaptive-routing/release_manifest.py \
-  --binary /tmp/mihomo-adaptive --output /tmp/adaptive-release.json
 cp templates/adaptive.example.json /tmp/my-adaptive.json
 proxy auto prepare --preferences /tmp/my-adaptive.json \
   --output /tmp/adaptive-candidate.yaml
-proxy kernel prepare --manifest /tmp/adaptive-release.json --switch-source \
+proxy kernel prepare --manifest /path/to/accepted-candidate/manifest.local.json \
   --config /tmp/adaptive-candidate.yaml --preferences /tmp/my-adaptive.json
 proxy kernel status
 ```
 
-候选输出路径必须是新文件。默认接管 MATCH 所用代理策略的 TCP；同策略的其他规则也在原位置增加 TCP 条件，原规则保留给 UDP。规则条件、明确 DIRECT/REJECT、未选中的其他策略组继续保持原意。需要接管其他组时，在偏好 `policies` 中明确列出已有策略组名称。
+候选输出路径必须是新文件。首次从其他来源迁入 fork 时明确增加 `--switch-source`；已有相同来源时不需要。默认接管 MATCH 所用代理策略的 TCP；同策略的其他规则也在原位置增加 TCP 条件，原规则保留给 UDP。规则条件、明确 DIRECT/REJECT、未选中的其他策略组继续保持原意。需要接管其他组时，在偏好 `policies` 中明确列出已有策略组名称。
 
 偏好默认尝试公开目标直连，失败后尝试代理；私网目标保持直连，日常配置仍应保留 LAN/明确直连规则。测试夹具可用 `direct_first:false` 路由回环目标；日常使用这种设置时必须已有完整的 LAN 直连规则。`region_patterns` 根据用户配置的名字匹配生成地区记录，不验证节点实际地理位置或服务支持范围；可以用 `regions` 精确指定。provider 运行时产生的新名称未匹配静态地区映射时地区未知，仍可选路。质量记录始终由内核在本机独立维护。
 
@@ -73,7 +71,7 @@ proxy start
 ```bash
 python3 tests/integration/live_tls_acceptance.py \
   --root "$HOME/.config/mihomo" --proxy http://127.0.0.1:7890 \
-  --expected-version v1.19.32-adaptive-prototype.2 \
+  --expected-version v1.19.32-adaptive.3 \
   --url https://chatgpt.com/robots.txt --requests 3 --settle-seconds 10 \
   --report /tmp/proxy-live-tls-result.json
 ```
@@ -82,7 +80,7 @@ python3 tests/integration/live_tls_acceptance.py \
 
 需要验证同一条连接在空闲后继续可用时，增加 `--keepalive --idle-seconds 10 --requests 4`。此模式使用 Python 标准库通过 CONNECT 建立经证书校验的 TLS，四次请求复用同一 socket，避免重连掩盖断流；核对响应完整性和连接仍然保留。远端主动关闭 HTTP keepalive 也会失败，须结合基线判断，不能直接归因于代理。该检查不等同于长时间 SSE/AI 响应验证。
 
-默认 URL 为公开 `robots.txt`，不是登录后的 AI 业务；首页可能因访问策略返回 403，即使证书校验成功也不能计为 200。可用 `--url` 指定已知可用的公开 HTTPS 目标，禁止 URL 中携带凭据或查询参数。验收脚本不读取应用 Cookie/Token、不重启服务、不调整节点；登录后的 Codex/Antigravity 请求和长连接仍需要独立验收。当前实验构建未验证 TUN/QUIC/UDP 自适应；保留 UDP 原规则只保证配置策略不被改写，不等于已验证该业务。
+默认 URL 为公开 `robots.txt`，不是登录后的 AI 业务；首页可能因访问策略返回 403，即使证书校验成功也不能计为 200。可用 `--url` 指定已知可用的公开 HTTPS 目标，禁止 URL 中携带凭据或查询参数。验收脚本不读取应用 Cookie/Token、不重启服务、不调整节点；AI 客户端完整响应需另行验收。本轮本机 Codex 请求已完成，Antigravity 按用户要求暂不纳入验收。当前实验构建未验证 TUN/QUIC/UDP 自适应；保留 UDP 原规则只保证配置策略不被改写，不等于已验证该业务。
 
 2026-10-11 的[进程退出诊断记录](../research/kernel-exit-diagnosis.md)包含执行会话清理的官方/实验内核对照，以及启动健康后终止进程的失败验收。
 
@@ -120,12 +118,12 @@ python3 tests/integration/managed_routing_probe.py \
 
 ## 稳定性与后续发行
 
-持续 Codex 对话已计入用户观察到的业务使用，不代表同一 socket 复用。60 秒 TLS 流、60 秒空闲、故障恢复、组重载/节点删除验证见 [结果](../research/stability-results.json)。Antigravity、TUN/UDP/QUIC 尚需独立验收。
+持续 Codex 对话已计入用户观察到的业务使用，不代表同一 socket 复用。60 秒 TLS 流、60 秒空闲、故障恢复、组重载/节点删除验证见 [结果](../research/stability-results.json)。Antigravity 暂不纳入本轮验收；TUN/UDP/QUIC 不在当前 TCP 自动选路的验收范围内。
 
 低频业务探测、日志轮转与反馈记录见 [健康监测](health.md)。后续内核源码与稳定版升级流水线以 [aruiplex/mihomo](https://github.com/aruiplex/mihomo) 为唯一权威；本仓库冻结原型补丁以便复现旧结果。CI 候选只在隔离夹具中验证，准备版本与本机启用分开。
 
 新 fork 候选支持共享偏好字段 `quality_persistence:true` 和 `quality_ttl:86400`，分别生成组配置 quality-persistence/quality-ttl；默认不启用持久化。旧 prototype.2 不支持这些字段，不应在旧版本上认为已经保存历史。新内核用私有文件、24 小时 TTL、容量限制、节点配置/凭据/订阅身份变更失效和坏文件冷启动维护本机历史。它不属于 sync 导出的质量数据；同步的是启用意图，接收端需要支持的新内核。当前本机仍使用内存记录。
 
-候选 `v1.19.32-adaptive.3` 已通过 [fork CI](https://github.com/aruiplex/mihomo/actions/runs/38164329436)，15 份夹具报告共 141 项检查，下载摘要与离线 manifest prepare 已验证；见 [发行证据](../research/fork-candidate-results.json)。CI 离线资产中的 manifest.local.json 使用相对文件名，可与同目录二进制一起下载后 prepare；manifest.json 的发行 URL 只在明确发布候选后有效。该候选尚未启用到本机，当前 prototype.2 的内存记录与原回退保持不变。
+`v1.19.32-adaptive.3` 已通过 [fork CI](https://github.com/aruiplex/mihomo/actions/runs/38164329436)，15 份夹具报告共 141 项检查，下载摘要与离线 manifest prepare 已验证；见 [发行证据](../research/fork-candidate-results.json)。CI 离线资产中的 manifest.local.json 使用相对文件名，可与同目录二进制一起下载后 prepare；manifest.json 的发行 URL 只在明确发布候选后有效。
 
-本机现有配置也已通过新候选 `-t` 校验，候选已 prepare 到本机；运行中的 PID、active 版本和 1.19.29 回退未变。启用仍需维护时 stop/activate/start 和独立 TLS/业务验收；准备候选本身不切换流量。
+2026-10-12 已在独立 systemd 恢复保护下完成本机切换。三个公开目标各两次 HTTPS 请求、同一 ChatGPT TLS socket 的四次请求及十秒空闲、本机 Codex 完整响应，以及执行进程结束后的独立 TLS 检查通过；新内核 PID 未变、重启次数为 0。见 [上线验收](../research/candidate3-deployment-results.json)。Codex 继承本机代理环境，但未独立归属其模型后端 socket，不把公开探测视为 AI 语义成功的证明。当前仍使用内存质量记录；`kernel rollback` 指向 prototype.2 的匹配快照，原 1.19.29 快照也保留在本机发行目录。版本切换不迁移已有 TCP 连接，维护期间应用需要重连。

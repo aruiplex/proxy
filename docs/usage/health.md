@@ -16,7 +16,7 @@ proxy health record --app codex --outcome complete
 proxy health record --app antigravity --outcome timeout
 ```
 
-业务反馈只记应用、时间、完整响应/超时/断流，不保存 token、内容或请求标识。2026-10-12 持续 Codex 对话已记录为用户观察到的业务使用；不证明同一 TCP/TLS socket 复用，也未独立追踪模型后端路径。Antigravity 暂无独立完成验收。
+业务反馈只记应用、时间、完整响应/超时/断流，不保存 token、内容或请求标识。2026-10-12 持续 Codex 对话已记录为用户观察到的业务使用；切换到 `.3` 后，本机 Codex 客户端也已返回完整验收响应。两者均不证明同一 TCP/TLS socket 复用，也未独立追踪模型后端路径。Antigravity 按用户要求暂不纳入本轮验收。详见 [上线验收](../research/candidate3-deployment-results.json)。
 
 `check --rotate`：日志达到 50 MiB 使用 copytruncate，最多保留 8 份、7 天；首次大于 500 MiB 的历史日志存为 logs/historical.log，不受常规清理影响。不降低日志级别、发送信号或重启。复制失败不截断；原追加 fd 继续写入同一 inode。与 logrotate copytruncate 一样，复制与截断之间存在极短的并发日志丢失窗口，业务连接不受影响。历史日志含敏感访问信息，不应上传。
 

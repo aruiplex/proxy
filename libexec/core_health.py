@@ -41,4 +41,3 @@ def check_listener_ownership(pid, ports):
     if found != ports:
         raise OSError('required listener is not owned by the expected core')
     return True
-

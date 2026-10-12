@@ -109,6 +109,9 @@ class ProxyHandler(socketserver.BaseRequestHandler):
                     self.server.blocked_probe_targets.append(target.decode())
                 self.request.sendall(b"HTTP/1.1 502 Outside fixture scope\r\nContent-Length: 0\r\n\r\n")
                 return
+            if self.server.stall.is_set() and target_port == self.server.stream_port:
+                self.server.finished.wait(timeout=5)
+                return
             with socket.create_connection(destination, timeout=3) as upstream:
                 self.request.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
                 if tail:
@@ -136,6 +139,7 @@ class FixtureProxy(socketserver.ThreadingTCPServer):
         self.stream_port = origin[1]
         self.origins = {origin[1]: origin, health_origin[1]: health_origin}
         self.reject = threading.Event()
+        self.stall = threading.Event()
         self.failure_scope = "all"
         self.finished = threading.Event()
         self.lock = threading.Lock()
@@ -158,7 +162,7 @@ def serving(server):
 
 
 class Stream:
-    def __init__(self, port, origin_port):
+    def __init__(self, port, origin_port, ssl_context=None):
         self.conn = socket.create_connection(("127.0.0.1", port), timeout=3)
         self.source_port = self.conn.getsockname()[1]
         try:
@@ -166,6 +170,8 @@ class Stream:
             header, _ = read_headers(self.conn)
             if b" 200 " not in header.split(b"\r\n", 1)[0]:
                 raise ValueError(header.split(b"\r\n", 1)[0].decode())
+            if ssl_context is not None:
+                self.conn = ssl_context.wrap_socket(self.conn, server_hostname="stream.test")
             self.conn.sendall(b"GET /stream HTTP/1.1\r\nHost: stream.test\r\n\r\n")
             header, tail = read_headers(self.conn)
             if b" 200 " not in header.split(b"\r\n", 1)[0]:
@@ -205,7 +211,7 @@ class Stream:
 
 
 class Kernel:
-    def __init__(self, binary, group, directory, origin, health_origin, nodes, max_failed_times):
+    def __init__(self, binary, group, directory, origin, health_origin, nodes, max_failed_times, group_options=None, proxy_definitions=None):
         self.port = free_port()
         self.api_port = free_port()
         self.origin_port = origin.server_address[1]
@@ -218,6 +224,9 @@ class Kernel:
             group_config.update(url=health, interval=3600, lazy=False, timeout=1000, **{"max-failed-times": max_failed_times, "expected-status": "204"})
         if group == "smart":
             group_config.update(uselightgbm=False, collectdata=False)
+        if group == "adaptive":
+            group_config.update({"failure-cooldown": 1000, "max-attempts": 3, "dial-budget": 3000, "attempt-timeout": 1000})
+        group_config.update(group_options or {})
         config = {
             "mixed-port": self.port,
             "bind-address": "127.0.0.1",
@@ -230,7 +239,7 @@ class Kernel:
             "dns": {"enable": False},
             "hosts": {"stream.test": "127.0.0.1", "health.test": "127.0.0.1"},
             "profile": {"store-selected": False, "store-fake-ip": False},
-            "proxies": [{"name": name, "type": "http", "server": "127.0.0.1", "port": node.server_address[1]} for name, node in nodes.items()],
+            "proxies": proxy_definitions if proxy_definitions is not None else [{"name": name, "type": "http", "server": "127.0.0.1", "port": node.server_address[1]} for name, node in nodes.items()],
             "proxy-groups": [group_config],
             "rules": ["MATCH,TEST"],
         }
@@ -247,6 +256,9 @@ class Kernel:
                     raise RuntimeError("kernel exited: " + self.log_path.read_text())
                 try:
                     self.api("/version")
+                    configured = self.api("/proxies/TEST")
+                    if set(configured.get("all", [])) != set(nodes):
+                        raise OSError("fixture group has not loaded yet")
                     break
                 except (OSError, urllib.error.URLError):
                     if time.monotonic() >= deadline:
@@ -380,6 +392,33 @@ def run(binary, group, keep_dir=None, max_failed_times=5, failure_scope="all"):
                 except (OSError, EOFError, ValueError) as failure:
                     report["checks"]["new_connection_recovers_after_health_check"] = False
                     report["observations"]["later_error"] = str(failure)
+            elif group == "adaptive" and second is not None:
+                target = f"stream.test:{kernel.origin_port}"
+                quality = kernel.api("/proxies/TEST/quality")
+                failures = [event for event in quality["events"] if event["kind"] == "dial-failed" and event["target"] == target]
+                report["checks"]["failed_dial_observable_for_original_target"] = any(event["node"] == selected for event in failures)
+                report["checks"]["candidate_not_repeated_in_establishment"] = report["observations"]["dial_attempts"] == {selected: 1, other: 1}
+                nodes[selected].reject.clear()
+                # Allow A's temporary penalty to expire before feedback on B.
+                time.sleep(1.1)
+                origin.paused.set()
+                time.sleep(0.35)
+                report["checks"]["healthy_stream_survives_brief_idle"] = not first.closed.is_set() and not second.closed.is_set()
+                origin.paused.clear()
+                report["checks"]["streams_resume_after_idle"] = first.progressing() and second.progressing()
+                kernel.api("/proxies/TEST/feedback", "POST", {"target": target, "reason": "timeout"})
+                third = kernel.stream()
+                stack.callback(third.close)
+                current = kernel.wait_connections(3)
+                new = next(conn for conn in current if int(conn["metadata"]["sourcePort"]) == third.source_port)
+                report["checks"]["feedback_changes_next_route"] = selected in new["chains"] and third.progressing()
+                report["checks"]["feedback_preserves_healthy_siblings"] = first.progressing() and second.progressing()
+                kernel.api(f"/connections/{old['id']}", "DELETE")
+                report["checks"]["negative_control_detects_explicit_close"] = first.closed.wait(timeout=2)
+                quality = kernel.api("/proxies/TEST/quality")
+                closed = [event for event in quality["events"] if event["kind"] == "closed" and event["target"] == target]
+                report["checks"]["closed_lifecycle_observable"] = any(event["readBytes"] > 0 and event["writtenBytes"] > 0 for event in closed)
+                report["observations"]["quality_event_kinds"] = [event["kind"] for event in quality["events"]]
             elif group == "smart" and second is not None:
                 # Restore both nodes, then examine target-feedback collateral damage.
                 nodes[selected].reject.clear()
@@ -409,7 +448,7 @@ def run(binary, group, keep_dir=None, max_failed_times=5, failure_scope="all"):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kernel", required=True)
-    parser.add_argument("--group", choices=["select", "fallback", "smart"], required=True)
+    parser.add_argument("--group", choices=["select", "fallback", "smart", "adaptive"], required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--keep-dir", help="fresh directory for fixture config and kernel log")
     parser.add_argument("--max-failed-times", type=int, default=5)

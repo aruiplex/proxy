@@ -10,21 +10,22 @@ import os
 import re
 import sys
 from pathlib import Path
+from routing_profile import ProfileError, entries, routing_entry, node_identity, section as profile_section, scalar
+from policy_routing import compile_groups, tcp_rules
 
 GROUP = 'AUTO-ADAPTIVE'
 BEGIN = '# >>> adaptive (auto) >>>'
 END = '# <<< adaptive (auto) <<<'
 
 
-class ConfigError(ValueError):
-    pass
+ConfigError = ProfileError
 
 
 def preferences(path):
     data = json.loads(Path(path).read_text())
     if data.get('schema') != 1 or data.get('enabled') is not True:
         raise ConfigError('选路偏好需要 schema=1 和 enabled=true')
-    allowed = {'schema', 'enabled', 'policies', 'direct_first', 'preferred_region', 'regions', 'region_patterns', 'exclude',
+    allowed = {'schema', 'enabled', 'policies', 'services', 'direct_first', 'preferred_region', 'regions', 'region_patterns', 'exclude',
                'max_attempts', 'dial_budget', 'attempt_timeout', 'failure_cooldown', 'max_records', 'quality_persistence', 'quality_ttl'}
     if set(data) - allowed:
         raise ConfigError('选路偏好含未知字段')
@@ -56,22 +57,23 @@ def preferences(path):
             raise ConfigError(key + ' 超出允许范围')
     if data.get('attempt_timeout',2000) > data.get('dial_budget',6000):
         raise ConfigError('attempt_timeout 不能超过 dial_budget')
+    services = data.get('services', {})
+    if not isinstance(services, dict):
+        raise ConfigError('services 必须为映射')
+    for name, service in services.items():
+        if not isinstance(name, str) or not name or not isinstance(service, dict) or set(service) != {'domains', 'allowed_regions', 'verified_regions'}:
+            raise ConfigError('服务约束需要 domains、allowed_regions、verified_regions')
+        if not isinstance(service['domains'], list) or not service['domains'] or any(not isinstance(d, str) or not re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?', d) for d in service['domains']):
+            raise ConfigError('服务 domains 必须为小写域名后缀列表')
+        if not isinstance(service['allowed_regions'], list) or not service['allowed_regions'] or any(not isinstance(r, str) or not re.fullmatch('[A-Z]{2}', r) for r in service['allowed_regions']):
+            raise ConfigError('allowed_regions 需要非空的两位地区代码列表')
+        if not isinstance(service['verified_regions'], dict) or any(not re.fullmatch('[a-f0-9]{64}', k) or v not in service['allowed_regions'] for k, v in service['verified_regions'].items()):
+            raise ConfigError('verified_regions 需要节点指纹到允许地区的映射')
     return data
 
 
-def scalar(text):
-    text = text.strip()
-    if text.startswith('"'):
-        return json.JSONDecoder().raw_decode(text)[0]
-    if text.startswith("'"):
-        match = re.match(r"^'((?:[^']|'')*)'", text)
-        if not match:
-            raise ConfigError('不支持的 YAML 引号')
-        return match[1].replace("''", "'")
-    return text.split(' #', 1)[0].strip()
-
-
 def section(lines, name):
+    profile_section(''.join(lines), name)  # reject duplicate/inline top-level sections
     for start, line in enumerate(lines):
         if re.match('^' + name + r':', line):
             if line.strip() != name + ':':
@@ -81,38 +83,6 @@ def section(lines, name):
                 end += 1
             return start, end
     raise ConfigError('配置缺少 ' + name)
-
-
-def names(lines):
-    result = []
-    for line in lines:
-        match = re.match(r'^\s*-\s*(?:\{\s*)?name:\s*(.*)', line)
-        if match:
-            raw = match[1]
-            if line.lstrip().startswith('- {') and not raw.lstrip().startswith(('"', "'")):
-                raw = raw.split(',', 1)[0].rstrip('} ')
-            value = scalar(raw)
-            if not isinstance(value, str) or not value:
-                raise ConfigError('节点/策略名称无效')
-            result.append(value)
-    return result
-
-
-def adaptive_group(prefs, node_names):
-    regions = dict(prefs.get('regions', {}))
-    for region, pattern in prefs.get('region_patterns', {}).items():
-        regex = re.compile(pattern)
-        for node in node_names:
-            if regex.search(node) and node not in regions:
-                regions[node] = region
-    result = {'name': GROUP, 'type': 'adaptive', 'include-all': True, 'include-all-providers': True,
-              'proxies': ['DIRECT'] if prefs.get('direct_first', True) else [], 'regions': regions}
-    mapping = {'preferred_region': 'preferred-region', 'exclude': 'exclude-filter', 'max_attempts': 'max-attempts',
-               'dial_budget': 'dial-budget', 'attempt_timeout': 'attempt-timeout', 'failure_cooldown': 'failure-cooldown', 'max_records': 'max-records', 'quality_persistence': 'quality-persistence', 'quality_ttl': 'quality-ttl'}
-    for key, field in mapping.items():
-        if key in prefs:
-            result[field] = prefs[key]
-    return result
 
 
 def policy(rule):
@@ -127,22 +97,8 @@ def select_policies(rules, groups, prefs):
     return set(selected)
 
 
-def tcp_rule(rule, selected):
-    parts = rule.rsplit(',', 2)
-    no_resolve = parts[-1].strip() == 'no-resolve'
-    index = -2 if no_resolve else -1
-    if parts[index].strip() not in selected:
-        return None
-    if rule.startswith('MATCH,'):
-        return 'NETWORK,tcp,' + GROUP
-    condition = ','.join(parts[:index])
-    if no_resolve:
-        condition += ',no-resolve'
-    return 'AND,((NETWORK,tcp),(' + condition + ')),' + GROUP
-
-
 def generated_rule(rule):
-    return policy(rule) == GROUP and (rule.startswith('NETWORK,tcp,') or rule.startswith('AND,((NETWORK,tcp),('))
+    return policy(rule).startswith(GROUP) and (rule.startswith('NETWORK,tcp,') or rule.startswith('AND,((NETWORK,tcp),('))
 
 
 def render(text, prefs):
@@ -154,13 +110,17 @@ def render(text, prefs):
         groups = config.get('proxy-groups', [])
         original_rules = [r for r in config.get('rules', []) if not generated_rule(r)]
         selected = select_policies(original_rules, {g['name'] for g in groups}, prefs)
-        if any(g['name'] == GROUP and g.get('type') != 'adaptive' for g in groups):
+        owned = set(config.get('x-proxy-adaptive-owned', [])) | {policy(r) for r in config.get('rules', []) if generated_rule(r)}
+        if any(g['name'].startswith(GROUP) and (g.get('type') != 'adaptive' or g['name'] not in owned) for g in groups):
             raise ConfigError('保留名称 AUTO-ADAPTIVE 已被其他策略使用')
-        config['proxy-groups'] = [g for g in groups if g['name'] != GROUP] + [adaptive_group(prefs, [p['name'] for p in config.get('proxies', [])])]
+        nodes = [dict(p, identity=node_identity(p)) for p in config.get('proxies', [])]
+        original_groups = [g for g in groups if not g['name'].startswith(GROUP)]
+        generated, routes = compile_groups(original_groups, nodes, prefs, selected, providers=bool(config.get('proxy-providers')))
+        config['proxy-groups'] = original_groups + generated
+        config['x-proxy-adaptive-owned'] = [g['name'] for g in generated]
         config['rules'] = []
         for rule in original_rules:
-            candidate = tcp_rule(rule, selected)
-            if candidate: config['rules'].append(candidate)
+            config['rules'].extend(tcp_rules(rule, routes))
             config['rules'].append(rule)
         return json.dumps(config, ensure_ascii=False, indent=2) + '\n'
     # Owned blocks can be rebuilt after a subscription/pool update.
@@ -170,8 +130,9 @@ def render(text, prefs):
     text = re.sub(r'(?m)^.* # adaptive-tcp \(auto\)\n?', '', text)
     lines = text.splitlines(keepends=True)
     gs, ge = section(lines, 'proxy-groups')
-    group_names = names(lines[gs + 1:ge])
-    if GROUP in group_names:
+    groups = [routing_entry(c) for c in entries(profile_section(text, 'proxy-groups'))]
+    group_names = [g['name'] for g in groups]
+    if any(n.startswith(GROUP) for n in group_names):
         raise ConfigError('AUTO-ADAPTIVE 已存在但不属于本工具')
     rs, re_end = section(lines, 'rules')
     rule_rows, rules = [], []
@@ -199,22 +160,27 @@ def render(text, prefs):
         rules.append(value)
     available = set(group_names) | ({GROUP} if previous_owned else set())
     selected = select_policies(rules, available, prefs)
-    for index, prefix, value, comment in rule_rows:
-        candidate = tcp_rule(value, selected)
-        if candidate:
-            lines[index] = prefix + json.dumps(candidate, ensure_ascii=False) + ' # adaptive-tcp (auto)\n' + lines[index]
-    try:
-        ps, pe = section(lines, 'proxies')
-        node_names = names(lines[ps + 1:pe])
-    except ConfigError:
-        node_names = []  # provider-only configs need no local name mapping
-    group = adaptive_group(prefs, node_names)
+    nodes = []
+    for chunk in entries(profile_section(text, 'proxies', required=False)):
+        node = routing_entry(chunk)
+        node['identity'] = node_identity(chunk)
+        nodes.append(node)
+    hints = {}
+    metadata = re.search(r'(?m)^x-proxy-node-regions:\s*(.+)$', text)
+    if metadata:
+        hints = json.loads(metadata[1])
+    generated, routes = compile_groups(groups, nodes, prefs, selected, hints, providers=bool(profile_section(text, 'proxy-providers', required=False)))
+    for index, prefix, rule, comment in rule_rows:
+        candidates = tcp_rules(rule, routes)
+        lines[index] = ''.join(prefix + json.dumps(r, ensure_ascii=False) + ' # adaptive-tcp (auto)\n' for r in candidates) + lines[index]
     entry = next((re.match(r'^(\s*)-\s+', line) for line in lines[gs + 1:ge] if re.match(r'^\s*-\s+', line)), None)
     indent = entry[1] if entry else '  '
-    group_lines = [BEGIN + '\n', indent + '- name: ' + GROUP + '\n']
-    for key, value in group.items():
-        if key != 'name':
-            group_lines.append(indent + '  ' + key + ': ' + json.dumps(value, ensure_ascii=False) + '\n')
+    group_lines = [BEGIN + '\n']
+    for group in generated:
+        group_lines.append(indent + '- name: ' + group['name'] + '\n')
+        for key, val in group.items():
+            if key != 'name':
+                group_lines.append(indent + '  ' + key + ': ' + json.dumps(val, ensure_ascii=False) + '\n')
     group_lines.append(END + '\n')
     lines[ge:ge] = group_lines
     return ''.join(lines)
@@ -239,7 +205,7 @@ def main():
         else:
             raise ConfigError('指定新的 --output 路径；--in-place 仅供订阅候选文件重放')
     except (OSError, ValueError, KeyError, TypeError, re.error) as error:
-        message = str(error) if isinstance(error, ConfigError) else '自动选路配置生成失败；检查配置结构、偏好与输出路径'
+        message = str(error) if isinstance(error, ProfileError) else '自动选路配置生成失败；检查配置结构、偏好与输出路径'
         print('[proxy] ' + message, file=sys.stderr)
         return 1
     return 0

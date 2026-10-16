@@ -619,6 +619,17 @@ sub_refresh() { (
         die "订阅内容无法解析 (既不是 Clash YAML 也不是节点列表); 配置未改动"
     fi
     _sub_sanitize "$new"
+    # Compose overlays in the staged file, then compile the final candidate scope.
+    if [[ -f "$MERGE_FILE" ]]; then
+        source "$SCRIPT_DIR/lib/merge.sh"
+        ( CONFIG="$new" PRESERVE_BAK=1 DEFER_APPLY=1 merge_apply ) || return 1
+    fi
+    if [[ -f "$CONF_DIR/regions.conf" ]]; then
+        source "$SCRIPT_DIR/lib/region.sh"
+        if [[ -n "$(_region_names)" ]]; then
+            ( CONFIG="$new" PRESERVE_BAK=1 DEFER_APPLY=1 region_apply ) || return 1
+        fi
+    fi
     source "$SCRIPT_DIR/lib/auto.sh"
     _adaptive_replay "$new" || return 1
     if ! mihomo_test "$new"; then
@@ -629,28 +640,6 @@ sub_refresh() { (
     cp -f "$CONFIG" "$BAK" || die "无法备份当前配置，订阅未替换"
     mv -f "$new" "$CONFIG" || die "无法替换 config.yaml"
     ok "订阅 '$name' 已更新, 备份 → $BAK"
-
-    # re-apply merge so prepend-rules survive the subscription refresh
-    if [[ -f "$MERGE_FILE" ]]; then
-        # shellcheck source=merge.sh
-        source "$SCRIPT_DIR/lib/merge.sh"
-        if _merge_rules >/dev/null 2>&1; then
-            info "重新应用 merge 规则 ..."
-            ( PRESERVE_BAK=1 DEFER_APPLY=1 merge_apply ) \
-                || { cp -f "$BAK" "$CONFIG"; warn "merge 应用失败，订阅更新已回滚"; return 1; }
-        fi
-    fi
-
-    # re-apply region groups so they (and the ban list) survive the refresh
-    if [[ -f "$CONF_DIR/regions.conf" ]]; then
-        # shellcheck source=region.sh
-        source "$SCRIPT_DIR/lib/region.sh"
-        if [[ -n "$(_region_names)" ]]; then
-            info "重新应用 region 组 ..."
-            ( PRESERVE_BAK=1 DEFER_APPLY=1 region_apply ) \
-                || { cp -f "$BAK" "$CONFIG"; warn "region 应用失败，订阅更新已回滚"; return 1; }
-        fi
-    fi
 
     # apply the on-disk config: hot-reload, or restart if controller is down
     # shellcheck source=service.sh

@@ -124,11 +124,15 @@ proxy sync export /path/to/private-settings.tar.gz
 
 配置修改一般先备份、运行 `mihomo -t`，再热重载；控制器不可达时部分兼容命令会重启，因此会影响现有连接。语法校验成功不等于业务验收成功。
 
+### 代理规则与服务地区限制
+
+规则决定直连、拒绝或代理；自动选路只在原代理策略允许的节点内重试，候选耗尽不会偷偷直连。节点池以一个明确订阅作为规则基准，保留 Google 等服务规则；其他订阅补充节点。需要地区限制的 AI 服务使用本机核对过的出口，名称中的 US/CA 仅是提示。详见 [配置与约束](docs/usage/adaptive-routing.md#节点池的规则来源)。
+
 ## 验证与维护边界
 
 2026-10-12 本机已切换到 `v1.19.32-adaptive.3`，完成真实公开 HTTPS、同一 TLS socket 空闲后续用、本机 Codex 完整响应和执行任务结束后的独立检查；详见 [上线证据](docs/research/candidate3-deployment-results.json)。这是一份有日期的验收记录，当前运行状态应重新查询。
 
-受控验证覆盖 Linux/amd64 TCP。公开探测不是登录后的 AI 请求，Codex 后端 socket 未独立归属；物理断线后的 TCP 无法迁移。用户持续使用 Antigravity、macOS、TUN/UDP/QUIC 并反馈目前较稳定，本轮按其要求不扩大验收；发现具体问题后再针对性修复。该使用反馈与受控验证范围分别记录，实际跨机器部署仍无验收记录。
+受控验证覆盖 Linux/amd64 TCP。公开探测不是登录后的 AI 请求，Codex 后端 socket 未独立归属；物理断线后的 TCP 无法迁移。2026-10-12 用户报告 Antigravity、macOS、TUN/UDP/QUIC 使用较稳定；2026-10-16 新报告的 Antigravity 地区故障已有[单独修复与验收](docs/research/antigravity-region-routing.md)，其余范围继续按实际问题处理。该使用反馈与受控验证范围分别记录，实际跨机器部署仍无验收记录。
 
 日常 CLI、健康命令补全和 proxy/scripts 管理层 CI 已整合，内核矩阵继续由 fork 承担。完整服务卸载仍由 [proxy #9](https://github.com/aruiplex/proxy/issues/9) 跟踪。接手维护或清理前阅读 [维护交接](docs/maintenance-handoff.md)，事实与剩余范围见 [维护审计](docs/research/maintenance-audit.md)。
 

@@ -50,7 +50,31 @@ proxy kernel status
 
 候选输出路径必须是新文件。首次从其他来源迁入 fork 时明确增加 `--switch-source`；已有相同来源时不需要。默认接管 MATCH 所用代理策略的 TCP；同策略的其他规则也在原位置增加 TCP 条件，原规则保留给 UDP。规则条件、明确 DIRECT/REJECT、未选中的其他策略组继续保持原意。需要接管其他组时，在偏好 `policies` 中明确列出已有策略组名称。
 
-偏好默认尝试公开目标直连，失败后尝试代理；私网目标保持直连，日常配置仍应保留 LAN/明确直连规则。测试夹具可用 `direct_first:false` 路由回环目标；日常使用这种设置时必须已有完整的 LAN 直连规则。`region_patterns` 根据用户配置的名字匹配生成地区记录，不验证节点实际地理位置或服务支持范围；可以用 `regions` 精确指定。provider 运行时产生的新名称未匹配静态地区映射时地区未知，仍可选路。质量记录始终由内核在本机独立维护。
+自动组只在所选原策略的代理节点范围内重试，原组中嵌套组会展开；多个被选策略各有自己的候选组。明确的 DIRECT/REJECT 与规则顺序保持。旧 `direct_first` 字段兼容读取，但不再允许它向代理策略添加 DIRECT；无候选时明确 REJECT，连 `empty-fallback` 也设置为 REJECT。私网直连仍由原始 LAN 规则决定，部署前保留完整 LAN 规则。
+
+`region_patterns` 和节点池生成的 `x-proxy-node-regions` 是节点名称推断的地区提示，只用于同地区偏好；它们不证明实际出口或业务可用。示例正则同时匹配 `US01` 等归一化名称。现阶段需要在节点池中展开静态节点；所选策略引用运行时 proxy-provider 时拒绝候选，避免把未知范围展开为全局所有节点。
+
+服务地区约束放在偏好 `services` 中，例如：
+
+```json
+{
+  "google-ai": {
+    "domains": ["googleapis.com", "googleusercontent.com", "antigravity-unleash.goog"],
+    "allowed_regions": ["CA", "US", "JP", "SG"],
+    "verified_regions": {}
+  }
+}
+```
+
+`verified_regions` 是本机实际核对过的节点 SHA-256 身份到地区代码的映射。维护者使用 `routing_profile.node_identity` 对候选中的节点条目取指纹，先在独立端口核对真实出口和原生应用请求，再填写。指纹不包含节点名字：重编号继续有效，端点/凭据变化会失效；格式变化也可能保守失效。空映射或无匹配候选会拒绝该服务的新 TCP 连接，不按名称猜测放行。服务规则在原代理规则的位置增加域名条件，不覆盖更早的明确直连/拒绝规则；非 TCP 继续使用原规则。这不是对任意新服务支持地区的自动识别，也不会读取 TLS 内的业务错误。
+
+核对代表当时出口；提供商可在端点不变时更换真实出口。业务再出现地区错误时重新核对并移除失效证据，不能把旧记录当永久地理保证。新增节点先核对，再进入受地区约束的候选；同一允许地区优先，必要时跨允许地区。
+
+### 节点池的规则来源
+
+`proxy pool refresh` 用 `proxy.conf` 的 `pool_rules_source` 指定唯一规则基准；未设置时使用 `active_sub`。每次成功抓取保存完整 `.profile` 与节点缓存，失败可复用上次成功版本；旧缓存只有 `.prox` 时可从对应 `config.<订阅名>.yaml` 恢复基准。基准缺失、组名冲突或不可安全理解时，刷新失败并保留现用配置，不生成简化 MATCH 规则。
+
+保留基准的规则顺序、专用策略组及 rule-providers。只有基准 MATCH 所用策略增加节点池入口，以接纳其他订阅的节点；专用组继续使用自己的节点。补充订阅的完整规则不参与混合。本机 merge 前置规则仍在重建后应用；临时直接编辑生成的 config.yaml 不能作为长期覆盖，应记录到 merge.yaml。普通刷新不等于内核升级。
 
 支持 JSON 和常见块式 YAML。对不能安全理解的 YAML 结构会拒绝生成；最终使用候选内核 `-t` 验证。配置引用的资源需要在本机状态目录中可用；状态目录内的资源绝对路径在校验副本中映射，原配置保持原路径。状态目录外的绝对路径或符号链接可能不符合临时副本的安全路径约束，会拒绝候选，不修改现有资源。
 
@@ -80,7 +104,7 @@ python3 tests/integration/live_tls_acceptance.py \
 
 需要验证同一条连接在空闲后继续可用时，增加 `--keepalive --idle-seconds 10 --requests 4`。此模式使用 Python 标准库通过 CONNECT 建立经证书校验的 TLS，四次请求复用同一 socket，避免重连掩盖断流；核对响应完整性和连接仍然保留。远端主动关闭 HTTP keepalive 也会失败，须结合基线判断，不能直接归因于代理。该检查不等同于长时间 SSE/AI 响应验证。
 
-默认 URL 为公开 `robots.txt`，不是登录后的 AI 业务；首页可能因访问策略返回 403，即使证书校验成功也不能计为 200。可用 `--url` 指定已知可用的公开 HTTPS 目标，禁止 URL 中携带凭据或查询参数。验收脚本不读取应用 Cookie/Token、不重启服务、不调整节点；AI 客户端完整响应需另行验收。本轮本机 Codex 请求已完成，Antigravity 按用户要求暂不纳入验收。当前实验构建未验证 TUN/QUIC/UDP 自适应；保留 UDP 原规则只保证配置策略不被改写，不等于已验证该业务。
+默认 URL 为公开 `robots.txt`，不是登录后的 AI 业务；首页可能因访问策略返回 403，即使证书校验成功也不能计为 200。可用 `--url` 指定已知可用的公开 HTTPS 目标，禁止 URL 中携带凭据或查询参数。验收脚本不读取应用 Cookie/Token、不重启服务、不调整节点；AI 客户端完整响应需另行验收。2026-10-12 阶段本机 Codex 请求已完成，当时 Antigravity 按用户要求暂不纳入；2026-10-16 的[地区故障修复](../research/antigravity-region-routing.md)已增加原生应用验收。当前实验构建未验证 TUN/QUIC/UDP 自适应；保留 UDP 原规则只保证配置策略不被改写，不等于已验证该业务。
 
 2026-10-11 的[进程退出诊断记录](../research/kernel-exit-diagnosis.md)包含执行会话清理的官方/实验内核对照，以及启动健康后终止进程的失败验收。
 
@@ -109,7 +133,7 @@ proxy help --all
 
 ## 多机协作
 
-`proxy sync export/import/push/pull` 包含共享的 `adaptive.json`，不包含内核目录、质量记录、cache.db、控制器认证信息或二进制路径。导入 portable 设置也会过滤不允许的键。配置包包含订阅信息，应当继续作为私密文件处理；导入只接受已知普通文件，拒绝路径穿越与链接。
+`proxy sync export/import/push/pull` 包含共享的 `adaptive.json`（含服务域名和允许地区），但导出清除 `verified_regions`，导入仅保留接收机器已有且仍被允许的出口核对证据。不包含内核目录、质量记录、cache.db、控制器认证信息或二进制路径。导入 portable 设置也会过滤不允许的键。配置包包含订阅信息，应当继续作为私密文件处理；导入只接受已知普通文件，拒绝路径穿越与链接。
 
 偏好在下一次订阅/节点池刷新时重放，失败生成或校验不会替换运行配置。SSH push 需要远端已安装当前版本的 proxy，通过远端 CLI 完成验证和导入。不同架构机器各自选择兼容发行资产，不能复制当前机器的内核路径。
 
@@ -131,7 +155,7 @@ python3 tests/integration/managed_routing_probe.py \
 
 ## 稳定性与后续发行
 
-持续 Codex 对话已计入用户观察到的业务使用，不代表同一 socket 复用。60 秒 TLS 流、60 秒空闲、故障恢复、组重载/节点删除验证见 [结果](../research/stability-results.json)。Antigravity 暂不纳入本轮验收；TUN/UDP/QUIC 不在当前 TCP 自动选路的验收范围内。
+持续 Codex 对话已计入用户观察到的业务使用，不代表同一 socket 复用。60 秒 TLS 流、60 秒空闲、故障恢复、组重载/节点删除验证见 [结果](../research/stability-results.json)。原有结果没有 Antigravity 原生验收；2026-10-16 地区故障已有独立应用验收。TUN/UDP/QUIC 不在当前 TCP 自动选路的验收范围内。
 
 低频业务探测、日志轮转与反馈记录见 [健康监测](health.md)。后续内核源码与稳定版升级流水线以 [aruiplex/mihomo](https://github.com/aruiplex/mihomo) 为唯一权威；本仓库冻结原型补丁以便复现旧结果。CI 候选只在隔离夹具中验证，准备版本与本机启用分开。
 

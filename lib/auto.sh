@@ -21,7 +21,7 @@ auto_cmd() {
             ;;
         -h|--help|help|"")
             say '用法: proxy auto prepare --output NEW_FILE [--config FILE] [--preferences FILE]'
-            say '保留规则条件和 DIRECT/REJECT；默认将 MATCH 所用代理策略的 TCP 交给自动选路，UDP 保留原策略。'
+            say '保留规则条件和 DIRECT/REJECT；默认将 MATCH 所用代理策略的 TCP 交给原范围内的代理节点，UDP 保留原策略。'
             say '其他策略通过偏好 policies 列表明确指定。只生成候选文件，不改运行状态。'
             ;;
         *) die "proxy auto: 未知子命令 $sub" ;;

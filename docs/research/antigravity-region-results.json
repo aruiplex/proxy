@@ -1,0 +1,125 @@
+{
+  "date": "2026-10-16",
+  "kernel": "v1.19.32-adaptive.3",
+  "kernel_changed": false,
+  "original_symptom": {
+    "native_application": "Antigravity",
+    "status": "ERROR",
+    "error": "FAILED_PRECONDITION: User location is not supported for the API use.",
+    "observed_inference_route": "DIRECT",
+    "public_ipv4_region": "HK",
+    "google_internal_region_classification": "unknown",
+    "ipv6_geolocation": "inconclusive"
+  },
+  "configuration": {
+    "baseline_rules": 519,
+    "local_prepend_rules": 2,
+    "pool_nodes": 59,
+    "verified_service_candidates": 2,
+    "verified_candidate_regions": [
+      "CA",
+      "US"
+    ],
+    "empty_fallback": "REJECT",
+    "legacy_direct_first_can_add_direct": false
+  },
+  "isolated": {
+    "policy_scope": {
+      "checks": {
+        "verified_node_selected": true,
+        "proxy_policy_excludes_direct": true,
+        "failed_eligible_node_never_uses_unverified_or_direct": true,
+        "healthy_tls_survives_failed_establishment": true,
+        "empty_eligibility_rejects_instead_of_compatible_direct": true,
+        "healthy_tls_survives_policy_reload": true,
+        "allowed_cross_region_fallback": true,
+        "original_tls_still_open": true
+      },
+      "scope": "isolated Linux TCP, generated policy, certificate-verified TLS; no accounts or production changes"
+    },
+    "refresh": {
+      "checks": {
+        "single_subscription_local_override_uses_adaptive_scope": true,
+        "pool_preserves_healthy_tls": true,
+        "pool_local_override_uses_generated_scope": true,
+        "full_rule_profile_cached": true,
+        "failed_download_uses_last_good_profile_and_keeps_streams": true,
+        "legacy_cache_recovers_baseline_after_invalid_download": true,
+        "explicit_direct_and_reject_survive_refresh": true
+      },
+      "scope": "local HTTP subscription, isolated managed core and certificate-verified TLS; no production changes"
+    },
+    "native_antigravity_status": "SUCCESS",
+    "same_tls_across_reload": true
+  },
+  "production": {
+    "config_hot_reload": true,
+    "core_pid_before": 1118177,
+    "core_pid_after": 1118177,
+    "core_restarts": 0,
+    "preexisting_tls_preserved": true,
+    "native_antigravity_status": "SUCCESS",
+    "new_inference_route_verified": true,
+    "tls": {
+      "passed": true,
+      "version": "v1.19.32-adaptive.3",
+      "same_pid_survived": true,
+      "listener_ownership_checked": true,
+      "request_mode": "same TLS connection with idle intervals",
+      "core_health_continuous": true,
+      "requests": [
+        {
+          "target": "chatgpt.com",
+          "http_status": 200,
+          "certificate_verified": true,
+          "bytes_received": 4390,
+          "complete_response": true,
+          "same_tls_connection": true,
+          "tls_version": "TLSv1.3",
+          "seconds": 1.289372,
+          "passed": true
+        },
+        {
+          "target": "chatgpt.com",
+          "http_status": 200,
+          "certificate_verified": true,
+          "bytes_received": 4390,
+          "complete_response": true,
+          "same_tls_connection": true,
+          "tls_version": "TLSv1.3",
+          "seconds": 0.457289,
+          "passed": true
+        },
+        {
+          "target": "chatgpt.com",
+          "http_status": 200,
+          "certificate_verified": true,
+          "bytes_received": 4390,
+          "complete_response": true,
+          "same_tls_connection": true,
+          "tls_version": "TLSv1.3",
+          "seconds": 0.327082,
+          "passed": true
+        }
+      ],
+      "failures": [],
+      "scope": "public HTTPS response, certificate verification and continuous PID/listener/controller checks; no authenticated AI request"
+    },
+    "wechat_service_pid_unchanged": true,
+    "wechat_backend_changed": false,
+    "independent_rollback_timer_armed_and_disarmed_after_acceptance": true
+  },
+  "limits": [
+    "Linux/amd64 TCP controlled tests",
+    "UDP/QUIC retain original rules without new eligibility enforcement",
+    "Unknown services have no inferred regional eligibility",
+    "Verification records are local, do not expire automatically and require rechecking when provider egress changes",
+    "Dynamic proxy-provider scopes are rejected instead of widened",
+    "Public geolocation is not Google internal eligibility classification"
+  ],
+  "management_tests": {
+    "run": 62,
+    "failures": 0,
+    "errors": 0
+  }
+}

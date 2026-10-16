@@ -28,7 +28,7 @@ POOL_STATE_DIR="$CONF_DIR/pool-state"
 [[ -d "$CONF_DIR" ]] && chmod 700 "$CONF_DIR" 2>/dev/null || true
 for _private in "$CONFIG" "$BAK" "$PROXY_CONF" "$ENV_STATE" \
                 "$CONF_DIR/subs.conf" "$CONF_DIR/regions.conf" "$CONF_DIR/merge.yaml" \
-                "$CONF_DIR"/pool-state/*.prox; do
+                "$CONF_DIR"/pool-state/*.prox "$CONF_DIR"/pool-state/*.profile; do
     [[ -f "$_private" ]] && chmod 600 "$_private" 2>/dev/null
 done
 unset _private

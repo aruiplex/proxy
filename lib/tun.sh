@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # proxy/lib/tun.sh — transparent TUN mode. Needs root (cap_net_admin + routing).
-# `proxy tun on/off` uses interactive sudo. Passwordless setup is intentionally
-# disabled because granting root execution to a user-writable binary is unsafe.
+# Linux uses an explicitly installed, non-root system service with network
+# capabilities. Other platforms retain interactive sudo compatibility.
 
 # shellcheck source=service.sh
 source "$SCRIPT_DIR/lib/service.sh"
@@ -9,16 +9,21 @@ source "$SCRIPT_DIR/lib/service.sh"
 tun_cmd() {
     local sub=${1:-}; shift || true
     case "$sub" in
+        prepare)
+            [[ "$(uname -s)" == Linux ]] || die "tun prepare 目前仅支持 Linux/systemd"
+            local bin; bin=$(mihomo_bin) || die "未找到 mihomo"
+            python3 "$SCRIPT_DIR/libexec/tun_prepare.py" --root "$CONF_DIR" --cli "$SCRIPT_DIR/proxy" --kernel "$bin" "$@"
+            ;;
         on)              tun_set on "$@" ;;
         off)             tun_set off "$@" ;;
         --setup-nopasswd) tun_setup_nopasswd "$@" ;;
-        -h|--help|"") say "用法: proxy tun on | off  (需要 sudo; 免密模式因安全原因已停用)" ;;
+        -h|--help|"") say "用法: proxy tun on | off | prepare --output DIR（Linux 首次安装需管理员安装监督器）" ;;
         *) die "proxy tun: 未知子命令 $sub" ;;
     esac
 }
 
 # replace the tun: block (text-preserving; only the tun mapping is touched) with a
-# standard block, enable set to the given value. gvisor stack needs no kernel tun dev.
+# standard block, enable set to the given value.
 tun_write_block() {
     local val=$1 tmp=$CONFIG.tun-tmp
     has python3 || die "tun 需要 python3 (文本编辑配置)"
@@ -110,6 +115,10 @@ _tun_recover_or_warn() {
 
 tun_set() {
     local mode=$1 bin was_running=0
+    if [[ "$(uname -s)" == Linux ]]; then
+        tun_linux_set "$mode"
+        return
+    fi
     require python3
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制"
     [[ -f "$CONFIG" ]] || die "无 $CONFIG (先: proxy init)"
@@ -162,6 +171,19 @@ tun_set() {
             die "普通模式启动失败; 查 proxy log"
         fi
     fi
+}
+
+# Linux toggles the existing capability-bearing supervised process by reload.
+# Initial migration is staged separately; never replace supervision with sudo/nohup.
+tun_linux_set() {
+    [[ -f "$CONF_DIR/supervisor.json" ]] || die "Linux TUN 需要受监督服务；先运行 proxy tun prepare --output DIR，按使用指南安装并迁移"
+    local bin; bin=$(mihomo_bin) || die "未找到 mihomo"
+    python3 "$SCRIPT_DIR/libexec/tun_linux.py" --root "$CONF_DIR" --kernel "$bin" "$1"
+}
+
+_tun_replay() {
+    [[ -f "$CONF_DIR/tun.json" ]] || return 0
+    python3 "$SCRIPT_DIR/libexec/tun_config.py" --config "$1" --preferences "$CONF_DIR/tun.json" --in-place
 }
 
 tun_setup_nopasswd() {

@@ -33,7 +33,7 @@ _proxy_complete() {
                 region)  COMPREPLY=( $(compgen -W "list apply preset add rm set" -- "$cur") ) ;;
                 merge)   COMPREPLY=( $(compgen -W "list add rm diff apply" -- "$cur") ) ;;
                 sub)     COMPREPLY=( $(compgen -W "add rm list use show refresh set" -- "$cur") ) ;;
-                tun)     COMPREPLY=( $(compgen -W "on off" -- "$cur") ) ;;
+                tun)     COMPREPLY=( $(compgen -W "on off prepare" -- "$cur") ) ;;
                 ui)      COMPREPLY=( $(compgen -W "on off status --secret --no-secret" -- "$cur") ) ;;
                 lan)     COMPREPLY=( $(compgen -W "on off status" -- "$cur") ) ;;
                 docker)  COMPREPLY=( $(compgen -W "on off status" -- "$cur") ) ;;

@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import urllib.request
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from protocol_probe import certificate, origin
 from routing_probe import FixtureProxy, Stream, free_port, serving
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'libexec'))
+from tun_config import defaults as tun_defaults
 
 
 class Subscription(BaseHTTPRequestHandler):
@@ -67,6 +70,11 @@ rules:
         (home / 'subs.conf').write_text(f'fixture\thttp://127.0.0.1:{server.server_port}/profile\n')
         (home / 'merge.yaml').write_text('prepend-rules:\n  - DOMAIN,stream.test,PROXY\n')
         (home / 'adaptive.json').write_text(json.dumps({'schema': 1, 'enabled': True, 'direct_first': True}))
+        # Off is intentional: exercise refresh persistence without privileges or
+        # touching host routes. Real TUN activation requires separate acceptance.
+        tun_prefs = tun_defaults(os.getuid())
+        tun_prefs['enabled'] = False
+        (home / 'tun.json').write_text(json.dumps(tun_prefs))
         env = dict(os.environ, CONF_DIR=str(home), PYTHONDONTWRITEBYTECODE='1', NO_PROXY='127.0.0.1,localhost', no_proxy='127.0.0.1,localhost')
 
         def cli(*args):
@@ -87,6 +95,7 @@ rules:
         stack.callback(first.close)
         checks = {'single_subscription_local_override_uses_adaptive_scope':
                   any('AUTO-ADAPTIVE' in c['chains'] and 'DIRECT' not in c['chains'] for c in connections())}
+        checks['single_subscription_keeps_host_tun_preferences'] = 'device: "proxy-tun"' in (home / 'config.yaml').read_text()
         # Switching only this fixture to pool mode exercises the same public CLI.
         with (home / 'proxy.conf').open('a') as file:
             file.write('pool=on\n')
@@ -94,6 +103,7 @@ rules:
         second = Stream(port, target.server_address[1], client_tls)
         stack.callback(second.close)
         checks['pool_preserves_healthy_tls'] = first.progressing()
+        checks['pool_keeps_host_tun_preferences'] = 'device: "proxy-tun"' in (home / 'config.yaml').read_text()
         checks['pool_local_override_uses_generated_scope'] = any('SG01' in c['chains'] and 'AUTO-ADAPTIVE' in c['chains'] for c in connections())
         checks['full_rule_profile_cached'] = (home / 'pool-state/fixture.profile').read_text().count('DOMAIN,blocked.test,REJECT') == 1
         server.failed = True

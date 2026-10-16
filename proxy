@@ -59,7 +59,7 @@ usage_all() {
     printf '  %-*s %s\n' "$w" "region list | apply | preset | add | rm | set" "地区自动组 (HK/SG/JP/US 一键预设)"
     printf '  %-*s %s\n' "$w" "sub add | rm | list | use | show | refresh" "多订阅管理 (refresh 自动重放 merge)"
     printf '  %-*s %s\n' "$w" "merge list | add | rm | diff | apply" "前置规则管理 (校验通过才生效)"
-    printf '  %-*s %s\n' "$w" "tun on | off" "透明 TUN (需 sudo/root)"
+    printf '  %-*s %s\n' "$w" "tun on | off | prepare" "透明 TUN (Linux 首次安装监督器需管理员)"
     printf '\n'
 
     printf '  %s🧰 工具%s\n' "${C_B}" "$n"

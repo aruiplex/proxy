@@ -77,6 +77,8 @@ proxy help                # 简短帮助；help --all 查看维护命令
 
 ## 升级、监督与回退
 
+Linux 的统一应用接入使用 [受监督 TUN](docs/usage/linux-tun.md)：先 `proxy tun prepare --output DIR`，审查并由管理员安装监督器，再在独立回退保护下迁移。首次安装与实际启用分开进行；后续 `proxy tun on/off` 使用原监督器重载，不通过 sudo/nohup 脱离监督。其他平台保留原有兼容入口。
+
 - `scripts update` 更新脚本代码和固定子模块提交。
 - `proxy update` 刷新订阅并重放已启用的选路偏好。
 - `proxy upgrade --manifest FILE` 只准备同来源的固定版本；官方来源也可用 `--version VERSION`。

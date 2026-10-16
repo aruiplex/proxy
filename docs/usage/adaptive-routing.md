@@ -78,7 +78,7 @@ proxy kernel status
 
 支持 JSON 和常见块式 YAML。对不能安全理解的 YAML 结构会拒绝生成；最终使用候选内核 `-t` 验证。配置引用的资源需要在本机状态目录中可用；状态目录内的资源绝对路径在校验副本中映射，原配置保持原路径。状态目录外的绝对路径或符号链接可能不符合临时副本的安全路径约束，会拒绝候选，不修改现有资源。
 
-Linux 上若已安装用户级 `proxy-mihomo.service`，且该服务的 PIDFile 指向当前配置目录，`proxy start/stop/restart` 自动交给 systemd。服务内部的启动仍使用内核锁，不递归调用自身；监督器失败不会绕过它启动第二个实例。没有匹配服务时保留原来的独立进程方式，不创建或修改用户服务文件。
+Linux 上若已安装用户级 `proxy-mihomo.service`，且该服务的 PIDFile 指向当前配置目录，`proxy start/stop/restart` 自动交给 systemd。[受监督 TUN](linux-tun.md) 迁移后由本机 supervisor.json 选择固定的 system unit，并验证 UID、PIDFile 与 cgroup。服务内部的启动仍使用内核锁，不递归调用自身；监督器失败不会绕过它启动第二个实例。未选择监督器且没有匹配用户服务时保留原来的独立进程方式。
 
 维护时可以直接执行：
 

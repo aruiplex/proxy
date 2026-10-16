@@ -91,14 +91,19 @@ def evaluate(observation, previous=None):
             'confirmed': confirmed, 'notification': notification, 'observation': observation, 'target_states': target_states}
 
 
-def systemd(unit=UNIT):
-    result = subprocess.run(['systemctl', '--user', 'show', unit,
+def systemd(unit=UNIT, root=None):
+    from systemd_service import supervisor
+    try:
+        scope, unit = supervisor(root) if root else ('user', unit)
+    except (OSError, ValueError, RuntimeError):
+        return {'supervisor_identity_invalid': True}
+    result = subprocess.run(['systemctl', '--' + scope, 'show', unit,
         '--property=MainPID,NRestarts,ActiveState,SubState,Result,ExecMainCode,ExecMainStatus'],
         capture_output=True, text=True, timeout=5)
     if result.returncode:
         return {}
     evidence = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
-    journal = subprocess.run(['journalctl', '--user', '-u', unit, '-n', '30', '--output=json', '--no-pager'],
+    journal = subprocess.run(['journalctl', '--' + scope, '-u', unit, '-n', '30', '--output=json', '--no-pager'],
                              capture_output=True, text=True, timeout=5)
     exits = []
     limited = False
@@ -113,6 +118,7 @@ def systemd(unit=UNIT):
         except (ValueError, TypeError): pass
     evidence['recent_exits'] = exits
     evidence['restart_limit_observed'] = limited
+    evidence['scope'], evidence['unit'] = scope, unit
     return evidence
 
 
@@ -158,7 +164,7 @@ def routing_evidence(qualities):
 
 
 def observe(root, proxy, targets=None, probe_budget=10, control_addresses=(('1.1.1.1', 443), ('8.8.8.8', 443))):
-    result = {'process_alive': False, 'controller_ok': False, 'probes': {}, 'systemd': systemd()}
+    result = {'process_alive': False, 'controller_ok': False, 'probes': {}, 'systemd': systemd(root=root)}
     try:
         pid = int((root / 'mihomo.pid').read_text())
         os.kill(pid, 0)

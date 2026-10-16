@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "enabled": true,
-  "direct_first": true,
+  "direct_first": false,
   "preferred_region": "SG",
   "region_patterns": {
-    "SG": "新加坡|Singapore|(?i:\\bSG\\b)",
-    "JP": "日本|Japan|(?i:\\bJP\\b)",
-    "US": "美国|United States|(?i:\\bUS\\b)"
+    "SG": "新加坡|Singapore|(?i:\\bSG(?:\\b|[0-9]))",
+    "JP": "日本|Japan|(?i:\\bJP(?:\\b|[0-9]))",
+    "US": "美国|United States|(?i:\\bUS(?:\\b|[0-9]))"
   },
   "max_attempts": 3,
   "dial_budget": 6000,

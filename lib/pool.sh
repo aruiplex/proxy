@@ -98,8 +98,10 @@ PY
         warn "订阅 '$name' 解析失败 (内容不是有效 Clash 配置)"
     fi
     # fall back to last-good state
+    rm -f "$raw" # discard failed/partial downloads before selecting cached routing
     if [[ -f "$POOL_STATE_DIR/$name.prox" ]]; then
         cp -f "$POOL_STATE_DIR/$name.prox" "$prox"
+        [[ ! -f "$POOL_STATE_DIR/$name.profile" ]] || cp -f "$POOL_STATE_DIR/$name.profile" "$raw"
         warn "使用上一轮的 '$name' 节点 ($POOL_STATE_DIR/$name.prox)"
         return 2
     fi
@@ -111,10 +113,20 @@ PY
 _pool_assemble() { # <work-dir> <out-file>
     # shellcheck source=region.sh
     source "$SCRIPT_DIR/lib/region.sh"
-    python3 - "$1" "$CONFIG" "$REGIONS_FILE" "$2" "$(controller_addr)" "$(conf_get lan)" "$(_region_exclude)" "$(_region_interval)" "$(_region_url)" <<'PY'
-import sys, re, os, glob
+    python3 - "$1" "$CONFIG" "$REGIONS_FILE" "$2" "$(controller_addr)" "$(conf_get lan)" "$(_region_exclude)" "$(_region_interval)" "$(_region_url)" "${POOL_RULES_SOURCE:-$(conf_get pool_rules_source)}" "$(conf_get active_sub)" "$SCRIPT_DIR/libexec" <<'PY'
+import sys, re, os, glob, json
+sys.path.insert(0, sys.argv[12])
+from routing_profile import routing_entry
+from pool_profile import apply_profile
 
 work, oldconf, regfile, outpath, ctrl, lan, exclude, interval, test_url = sys.argv[1:10]
+baseline = sys.argv[10] or sys.argv[11]
+if not baseline or not re.fullmatch(r'[A-Za-z0-9_.-]+', baseline):
+    sys.exit('节点池需要明确的规则基准: 先选择 active_sub 或设置 pool_rules_source')
+profile_path = os.path.join(work, baseline + '.raw')
+if not os.path.isfile(profile_path):
+    sys.exit('规则基准不可用；保留现用配置，不生成简化兜底规则')
+profile = open(profile_path, encoding='utf-8').read()
 interval = interval or '60'
 test_url = test_url or 'http://www.gstatic.com/generate_204'
 
@@ -181,7 +193,7 @@ def clean(raw):
     n = raw
     n = re.sub(r'[\U0001F1E6-\U0001F1FF]{2}', '', n)        # flag emojis
     n = re.sub(r'[\U0001F000-\U0001FAFF\u2600-\u27BF]', '', n)  # other emojis
-    n = re.sub(r'[\u2700-\u27BF\uFE00-\uFE0F\u1F900-\u1F9FF]', '', n)
+    n = re.sub(r'[\u2700-\u27BF\uFE00-\uFE0F\U0001F900-\U0001F9FF]', '', n)
     n = n.split('|')[0]                                     # |实验|1倍|V1 suffix
     n = re.sub(r'\[[^\]]*\]', ' ', n)                       # [一倍电信]
     n = re.sub(r'(?i)(cloudfront|telecom|unicom|mobile|experiment|native|ipv6|ipv4|倍率|流量|解锁|家宽|实验|优化|专线|中转|机场|官网|线路|节点)', ' ', n)
@@ -272,7 +284,7 @@ for pf in sorted(glob.glob(os.path.join(work, '*.prox'))):
             if not raw_name:
                 continue
             cleaned = clean(raw_name)
-            entries.append((region_of(cleaned), cleaned, text))
+            entries.append((region_of(cleaned), cleaned, text, os.path.basename(pf)[:-5], raw_name))
             continue
         i += 1
 
@@ -283,13 +295,16 @@ if not entries:
 # ---- normalize: sequential numbering per canonical region (deterministic) ----
 from collections import defaultdict
 by_canon = defaultdict(list)
-for canon, cleaned, text in entries:
-    by_canon[canon].append((cleaned, text))
+for canon, cleaned, text, source, original in entries:
+    by_canon[canon].append((cleaned, text, source, original))
+baseline_renames = {}
+source_renames = defaultdict(dict)
+node_sources = {}
 numbered = []       # (canon, final_name, text)
 used = set()
 for canon in sorted(by_canon, key=lambda c: (c == '', c)):
     lst = sorted(by_canon[canon], key=lambda x: x[0].lower())
-    for idx, (cleaned, text) in enumerate(lst, 1):
+    for idx, (cleaned, text, source, original) in enumerate(lst, 1):
         final = ('%s%02d' % (canon, idx)) if canon else cleaned
         if final in used:                       # unnamed collision -> suffix
             k = 2
@@ -298,6 +313,10 @@ for canon in sorted(by_canon, key=lambda c: (c == '', c)):
             final = '%s-%d' % (final, k)
         used.add(final)
         numbered.append((canon, final, text))
+        source_renames[source][original] = final
+        node_sources[final] = source
+        if source == baseline:
+            baseline_renames[original] = final
 
 # ---- rename the name field in each entry text ----
 def rename(text, new):
@@ -307,7 +326,14 @@ def rename(text, new):
 
 proxies_out = []
 for canon, final, text in numbered:
-    proxies_out.append(rename(text, final))
+    renamed = rename(text, final)
+    refs = source_renames[node_sources[final]]
+    dialer = routing_entry(renamed).get('dialer-proxy')
+    if dialer in refs:
+        renamed = re.sub(r'(dialer-proxy:\s*)([^,}\n]+)', lambda m: m[1] + json.dumps(refs[dialer], ensure_ascii=False), renamed)
+    indent = len(re.match(r'^([ \t]*)-', renamed)[1])
+    proxies_out.append(''.join('    ' + line[indent:] if line.strip() else line
+                               for line in renamed.splitlines(keepends=True)))
 
 # ---- build groups ----
 xre = re.compile(exclude) if exclude else None
@@ -418,45 +444,14 @@ def replace_top_section(text, key, section):
 if old.strip():
     rendered = replace_top_section(old, 'proxies', proxies_section)
     rendered = replace_top_section(rendered, 'proxy-groups', groups_section)
-    old_groups = set(re.findall(r'(?m)^\s*-\s+name:\s*["\']?(.+?)["\']?\s*$', old))
-    old_groups.update(re.findall(r'(?m)^\s*-\s*\{[^}\n]*\bname:\s*["\']?([^,}"\']+)', old))
-    new_groups = {'节点选择', 'AUTO', '🚀 自动'} | set(chain)
-    stale_groups = old_groups - new_groups
-    if stale_groups:
-        ls = rendered.splitlines(keepends=True)
-        in_rules = False
-        for i, line in enumerate(ls):
-            if re.match(r'^rules:\s*$', line):
-                in_rules = True
-                continue
-            if in_rules and line.strip() and re.match(r'^[A-Za-z0-9_-]+\s*:', line):
-                in_rules = False
-            if not in_rules:
-                continue
-            m = re.match(r'^(\s*-\s*)(.*?)(\r?\n?)$', line)
-            if not m:
-                continue
-            raw = m.group(2).strip()
-            quoted = re.match(r"^(['\"])(.*?)\1(\s+#.*)?$", raw)
-            if quoted:
-                quote, value, comment = quoted.group(1), quoted.group(2), quoted.group(3) or ''
-            else:
-                quote = ''
-                commented = re.match(r'^(.*?)(\s+#.*)?$', raw)
-                value, comment = commented.group(1).rstrip(), commented.group(2) or ''
-            parts = value.split(',')
-            idx = -2 if parts and parts[-1].strip() == 'no-resolve' else -1
-            if parts and parts[idx].strip() in stale_groups:
-                parts[idx] = '节点选择'
-                value = ','.join(parts)
-                rendered_rule = quote + value + quote if quote else value
-                ls[i] = m.group(1) + rendered_rule + comment + m.group(3)
-        rendered = ''.join(ls)
 else:
     rendered = (port_keys + 'mode: rule\nlog-level: info\n'
                 'external-controller: %s\n' % ctrl)
-    rendered += proxies_section + groups_section
-    rendered += "rules:\n    - 'MATCH,节点选择'\n"
+    rendered += proxies_section
+# The active source owns routing; other subscriptions contribute nodes only.
+rendered = apply_profile(rendered, profile, baseline_renames, '\n'.join(groups[1:]) + '\n', '节点选择', exclude)
+rendered = re.sub(r'(?m)^x-proxy-node-regions:.*\n?', '', rendered)
+rendered += 'x-proxy-node-regions: ' + json.dumps({final: canon for canon, final, _ in numbered if canon}, ensure_ascii=False) + '\n'
 open(outpath, 'w').write(rendered)
 print('merged %d nodes from %d entries' % (len(numbered), len(entries)))
 PY
@@ -503,9 +498,20 @@ pool_refresh() { (
         esac
     done
 
+    local baseline; baseline=$(conf_get pool_rules_source)
+    [[ -n "$baseline" ]] || baseline=$(conf_get active_sub)
+    # Legacy caches stored only nodes. Recover the explicit baseline profile when available.
+    if [[ -n "$baseline" && ! -f "$work/$baseline.raw" && -f "$CONF_DIR/config.$baseline.yaml" ]]; then
+        cp -f "$CONF_DIR/config.$baseline.yaml" "$work/$baseline.raw"
+    fi
     local out="$work/pool.yaml"
     if ! _pool_assemble "$work" "$out"; then
         die "池配置生成失败 (无任何订阅可用?)"
+    fi
+    # Compose local overrides in the candidate before automatic policy expansion.
+    if [[ -f "$MERGE_FILE" ]]; then
+        source "$SCRIPT_DIR/lib/merge.sh"
+        ( CONFIG="$out" PRESERVE_BAK=1 DEFER_APPLY=1 merge_apply ) || return 1
     fi
     source "$SCRIPT_DIR/lib/auto.sh"
     _adaptive_replay "$out" || return 1
@@ -520,19 +526,13 @@ pool_refresh() { (
         fname=$(basename "$fresh" .fresh)
         cp -f "$work/$fname.prox" "$POOL_STATE_DIR/$fname.prox" \
             || die "无法提交节点池缓存: $fname"
+        cp -f "$work/$fname.raw" "$POOL_STATE_DIR/$fname.profile" \
+            || die "无法提交订阅规则缓存: $fname"
     done
     cp -f "$CONFIG" "$BAK" || die "无法备份当前配置，节点池未替换"
     mv -f "$out" "$CONFIG" || die "无法替换 config.yaml"
     ok "节点池已构建: $okn/${#names[@]} 个订阅生效"
     date +%s > "$POOL_STATE_DIR/.built"
-
-    # re-apply merge rules so prepend-rules survive the rebuild
-    if [[ -f "$MERGE_FILE" ]]; then
-        # shellcheck source=merge.sh
-        source "$SCRIPT_DIR/lib/merge.sh"
-        ( PRESERVE_BAK=1 DEFER_APPLY=1 merge_apply ) \
-            || { cp -f "$BAK" "$CONFIG"; warn "merge 应用失败，节点池更新已回滚"; return 1; }
-    fi
 
     # shellcheck source=service.sh
     source "$SCRIPT_DIR/lib/service.sh"

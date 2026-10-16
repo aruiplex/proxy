@@ -20,7 +20,7 @@
 #   proxy sync push <user@host>   transfer + merge on the remote (bash/awk only)
 #   proxy sync pull <user@host>   fetch the remote's bundle and import locally
 
-SYNC_CONF_KEYS="active_sub sub_ua sub_url region_interval region_url region_exclude test_timeout test_url lan pool"
+SYNC_CONF_KEYS="active_sub sub_ua sub_url region_interval region_url region_exclude test_timeout test_url lan pool pool_rules_source"
 
 # filter proxy.conf: print only the portable keys (space-separated list in $1)
 _sync_portable() { # <file> <keys>
@@ -46,6 +46,24 @@ try:
 except Exception:
     raise SystemExit(1)
 PYPREF
+}
+
+# Egress verification belongs to this machine, like local quality evidence.
+_sync_preferences_copy() { # <source> <destination> [local-preferences]
+    python3 - "$1" "$2" "${3:-}" <<'PYLOCAL'
+import json,sys
+from pathlib import Path
+incoming=json.loads(Path(sys.argv[1]).read_text())
+try:
+    local=json.loads(Path(sys.argv[3]).read_text()) if sys.argv[3] and Path(sys.argv[3]).is_file() else {}
+except (OSError,ValueError):
+    local={}
+for name,service in incoming.get('services',{}).items():
+    previous=local.get('services',{}).get(name,{})
+    allowed=service['allowed_regions']
+    service['verified_regions']={k:v for k,v in previous.get('verified_regions',{}).items() if v in allowed}
+Path(sys.argv[2]).write_text(json.dumps(incoming,ensure_ascii=False,indent=2)+'\n')
+PYLOCAL
 }
 
 _sync_unpack() { # <file|-> <destination>; never extract archive paths/links
@@ -101,6 +119,9 @@ _sync_build() { # <dest-dir>
         fi
     done
     [[ ! -f "$CONF_DIR/adaptive.json" ]] || _sync_preferences_valid "$CONF_DIR/adaptive.json" || return 1
+    if [[ -f "$tmp/adaptive.json" ]]; then
+        _sync_preferences_copy "$CONF_DIR/adaptive.json" "$tmp/adaptive.json" || return 1
+    fi
     _sync_portable "$PROXY_CONF" "$SYNC_CONF_KEYS" > "$tmp/proxy.portable"
     [[ -s "$tmp/proxy.portable" ]] && have=1
     if (( ! have )); then
@@ -154,7 +175,14 @@ sync_import() { ( # [path] — file / dir / stdin
     local n=0
     for f in merge.yaml regions.conf subs.conf adaptive.json; do
         if [[ -f "$tmp/$f" ]]; then
-            cp -f "$tmp/$f" "$CONF_DIR/$f"; chmod 600 "$CONF_DIR/$f"; n=$((n+1))
+            if [[ "$f" == adaptive.json ]]; then
+                local incoming_prefs; incoming_prefs=$(mktemp "$CONF_DIR/.adaptive.import.XXXXXX") || return 1
+                _sync_preferences_copy "$tmp/$f" "$incoming_prefs" "$CONF_DIR/adaptive.json" || { rm -f "$incoming_prefs"; return 1; }
+                mv -f "$incoming_prefs" "$CONF_DIR/$f" || return 1
+            else
+                cp -f "$tmp/$f" "$CONF_DIR/$f" || return 1
+            fi
+            chmod 600 "$CONF_DIR/$f"; n=$((n+1))
         fi
     done
     _sync_merge_conf "$tmp/proxy.portable"

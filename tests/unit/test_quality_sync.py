@@ -93,5 +93,24 @@ class QualityAndSync(unittest.TestCase):
             self.cli('sync','import',str(path),success=False)
             self.assertEqual((self.home/'proxy.conf').read_text(),original)
 
+    def test_service_verification_stays_local_during_export_and_import(self):
+        local_id='a'*64
+        foreign_id='b'*64
+        local={'schema':1,'enabled':True,'services':{'google-ai':{
+            'domains':['googleapis.com'],'allowed_regions':['CA','US'],
+            'verified_regions':{local_id:'CA'}}}}
+        (self.home/'adaptive.json').write_text(json.dumps(local))
+        bundle=self.directory/'services.tar.gz'
+        self.cli('sync','export',str(bundle))
+        with tarfile.open(bundle) as archive:
+            shared=json.load(archive.extractfile('./adaptive.json'))
+        self.assertEqual(shared['services']['google-ai']['verified_regions'],{})
+        incoming=self.directory/'incoming-service';incoming.mkdir()
+        local['services']['google-ai']['verified_regions']={foreign_id:'US'}
+        (incoming/'adaptive.json').write_text(json.dumps(local))
+        self.cli('sync','import',str(incoming))
+        imported=json.loads((self.home/'adaptive.json').read_text())
+        self.assertEqual(imported['services']['google-ai']['verified_regions'],{local_id:'CA'})
+
 
 if __name__=='__main__': unittest.main()

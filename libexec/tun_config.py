@@ -10,7 +10,7 @@ from routing_profile import ProfileError, replace_section
 
 def defaults(uid):
     return {'schema': 1, 'enabled': True, 'tun': {
-        'enable': True, 'device': 'proxy-tun', 'stack': 'gvisor',
+        'enable': True, 'device': 'proxy-tun', 'stack': 'system',
         'auto-route': True, 'auto-redirect': True, 'auto-detect-interface': True,
         'dns-hijack': ['any:53', 'tcp://any:53'],
         'include-uid': [uid], 'strict-route': False,

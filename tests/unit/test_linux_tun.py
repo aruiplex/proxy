@@ -147,10 +147,12 @@ rules:
             (root / 'config.yaml').write_text(original)
             kernel = base / 'mihomo';kernel.write_text('#!/bin/sh\nexit 0\n');kernel.chmod(0o700)
             output = base / 'stage'
-            result = tun_prepare.prepare(root, REPO / 'proxy', kernel, output)
+            result = tun_prepare.prepare(root, REPO / 'proxy', kernel, output, auto_redirect=False)
             self.assertFalse(result['activated'])
             self.assertEqual((root / 'config.yaml').read_text(), original)
             self.assertFalse((root / 'supervisor.json').exists())
+            self.assertFalse(json.loads((output / 'tun.json').read_text())['tun']['auto-redirect'])
+            self.assertIn('auto-redirect: false', (output / 'candidate.yaml').read_text())
             unit = (output / result['unit']).read_text()
             self.assertIn('NoNewPrivileges=true', unit)
             self.assertIn('AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW', unit)

@@ -63,7 +63,7 @@ polkit.addRule(function(action, subject) {
 ''' % (json.dumps(user.pw_name), json.dumps(unit))
 
 
-def prepare(root, cli, kernel, output):
+def prepare(root, cli, kernel, output, auto_redirect=True):
     user = pwd.getpwuid(os.getuid())
     if user.pw_uid == 0:
         raise ValueError('prepare must run as the application user')
@@ -74,6 +74,7 @@ def prepare(root, cli, kernel, output):
         raise ValueError('finish the pending kernel transaction first')
     raw = (root / 'config.yaml').read_text()
     prefs = defaults(user.pw_uid)
+    prefs['tun']['auto-redirect'] = auto_redirect
     candidate = render(raw, prefs)
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     unit = 'proxy-mihomo-%s.service' % user.pw_uid
@@ -125,10 +126,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('root', 'cli', 'kernel', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument('--no-auto-redirect', action='store_true', help='use TUN routes without nftables TCP redirection')
     args = parser.parse_args()
     os.umask(0o077)
     try:
-        result = prepare(args.root, args.cli, args.kernel, args.output)
+        result = prepare(args.root, args.cli, args.kernel, args.output, not args.no_auto_redirect)
     except (OSError, ValueError, subprocess.SubprocessError):
         parser.exit(1, '[proxy] Linux TUN 准备失败；未修改现用配置或服务。\n')
     print(json.dumps(result))

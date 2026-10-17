@@ -1,10 +1,14 @@
 # 维护交接
 
-## 2026-10-16：NAS / Stallion 统一 Linux TUN（准备阶段）
+## 2026-10-17：NAS / Stallion 统一 Linux TUN（已验收）
 
-两机此前已对齐 scripts 04824c3 / proxy d33ee13，内核仍为 adaptive.3。本次补充同源的 Linux TUN 准备、system scope 监督器选择、配置候选重放与受监督切换入口；[维护流程](usage/linux-tun.md)说明一次管理员安装和独立验收边界。
+两机固定相同 scripts/proxy 提交，内核仍为 adaptive.3。实际应用运行在 Stallion 的 SSH 会话时不再依赖 agy-proxy；它保留为兼容入口。部署使用非 root 的 system unit `proxy-mihomo-1000.service`，旧用户 unit 已停止/禁用，新 unit 已配置开机启动及异常重启。维护流程见 [Linux TUN](usage/linux-tun.md)，具体 PID、模式和脱敏验收见 [部署结果](research/linux-tun-deployment-results.json)。
 
-两台 sudo 均要求交互式授权；准备代码、候选原生校验和无权限测试不等于启用 TUN。交接必须按每机实时状态记录“准备 / 管理员安装 / 迁移 / 独立业务验收”，不得自动恢复 Maestro 原业务会议。agy-proxy 是先前验证过的临时应急入口，不是所有应用的最终接入要求。保留原始私密恢复证据与两机不同的节点/服务资格记录。
+NAS 为 system 栈、auto-redirect=false 的 TUN 路由模式；Stallion 为 system 栈、auto-redirect=true。工具版本一致不要求私密节点或本机适配参数相同。两机清空代理环境后的原生 Antigravity、真实 GPT/TLS、IPv6 HTTPS、新 SSH/Tailscale 均通过；NAS 另有原生 Codex 完整最小回复。订阅/节点池重放及监听归属检查覆盖相应边界。实际重启整机、生产崩溃注入、全面 UDP/QUIC 不在本次验收范围；Maestro 原业务会议未恢复/重放。
+
+首次候选 gvisor 因发行未编入而失败，NAS auto-redirect 又出现 netlink ENOENT；两次均在独立回退保护下恢复旧服务，再以兼容参数重试成功。不能以 -t 或控制器启动替代实际 TUN 状态与业务验收。带能力进程限制 /proc/PID/fd 访问时，监测使用 socket cgroup/UID 与唯一 PID 成员核对，不增加 root 读取权限。
+
+当前匹配的私密恢复与验收：NAS `$HOME/.local/state/proxy-maintenance/tun-20261017-route`，Stallion `$HOME/.local/state/proxy-maintenance/tun-20261017`。成功后回退计时均解除；旧失败阶段材料保留为证据，不能重新启用旧计时器。需要恢复时使用当前匹配目录的 deployment.py rollback --force，先停止 system unit 再恢复旧配置/标记/用户监督器。接手先查实时状态、Git 和该目录 handoff.md，不用历史 PID 代替实测。
 
 ## 2026-10-16：Antigravity 地区错误
 

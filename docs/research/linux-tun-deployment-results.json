@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-17",
+  "kernel": "v1.19.32-adaptive.3",
+  "kernel_changed": false,
+  "management_tests": 75,
+  "scope": "Linux cgroup v2; applications of UID 1000; LAN/Tailscale/other UIDs and independent container namespaces excluded",
+  "hosts": {
+    "NAS": {
+      "stack": "system",
+      "auto_redirect": false,
+      "pid": 49171,
+      "system_service_active": true,
+      "system_service_enabled": true,
+      "old_user_service_disabled": true,
+      "restarts": 0,
+      "tls_statuses": [
+        200,
+        200,
+        200
+      ],
+      "same_tls": true,
+      "native_antigravity_without_proxy_env": "SUCCESS",
+      "native_codex_without_proxy_env": {
+        "exit": 0,
+        "turn_completed": true,
+        "marker": true,
+        "tool_calls": 0
+      },
+      "inference_transparent_ingress": "Tun",
+      "inference_proxy_group_verified": true,
+      "ipv6_https_status": 200,
+      "dns_udp_through_tun": true,
+      "fresh_authenticated_ssh_via_stallion": true,
+      "listener_ownership_verified": true,
+      "rollback_guard_disarmed_after_acceptance": true
+    },
+    "Stallion": {
+      "stack": "system",
+      "auto_redirect": true,
+      "pid": 1977283,
+      "system_service_active": true,
+      "system_service_enabled": true,
+      "old_user_service_disabled": true,
+      "restarts": 0,
+      "tls_statuses": [
+        200,
+        200,
+        200
+      ],
+      "same_tls": true,
+      "native_antigravity_without_proxy_env": "SUCCESS",
+      "inference_transparent_ingress": "Redir (auto-redirect TCP)",
+      "inference_proxy_group_verified": true,
+      "ipv6_https_status": 200,
+      "dns_resolution_and_tailscale": true,
+      "fresh_authenticated_ssh": true,
+      "listener_ownership_verified": true,
+      "rollback_guard_disarmed_after_acceptance": true
+    }
+  },
+  "compatibility_findings": [
+    {
+      "trigger": "gvisor stack on current release",
+      "observed": "kernel startup reports gVisor is not included; configuration -t had passed",
+      "resolution": "use built-in system stack; guarded failure restored previous service"
+    },
+    {
+      "trigger": "NAS auto-redirect initialization",
+      "observed": "netlink receive ENOENT; precise missing expression/module cause not established",
+      "resolution": "route-only TUN on NAS, independently accepted; guarded failure restored previous service"
+    },
+    {
+      "trigger": "read /proc/PID/fd on network-capability-bearing core",
+      "observed": "PermissionError although core listens normally",
+      "resolution": "read-only socket UID/cgroup diagnostics plus exclusive PID membership; ambiguous or foreign ownership rejected"
+    }
+  ],
+  "limits": [
+    "Whole-machine reboot and deliberate production crash injection were not performed; enabled/Restart=on-failure configuration inspected",
+    "UDP application/QUIC coverage is not claimed beyond DNS UDP; existing routing behavior retained",
+    "Maestro original business conference was not resumed or replayed",
+    "Node-region verification remains host-local; private subscriptions and recovery snapshots excluded from Git"
+  ]
+}

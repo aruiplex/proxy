@@ -41,6 +41,8 @@ sudo bash "$HOME/.local/state/proxy-maintenance/tun-20261016/install-supervisor.
 
 完成首次迁移后，`proxy start/stop/restart` 使用本机 supervisor.json 选定的 system unit；监督器不可读、身份不符或操作失败均返回错误，避免启动第二实例。`proxy tun on/off` 通过已具备能力的进程重载配置，校验实际设备及控制器状态，失败恢复原配置，不切换为 sudo/nohup。
 
+带网络能力的进程可能限制普通用户读取 `/proc/PID/fd`。监测器在此情况下通过 `ss --cgroup` 的 socket UID/控制组与唯一 PID 成员核对监听归属；需 Linux cgroup v2 和 iproute2。缺少元数据、有其他进程或归属不一致时仍失败，不把“端口可连接”视为归属证明。
+
 `tun.json` 是本机接入偏好，单订阅及节点池刷新在候选中重放；不参与共享偏好同步。保留现有 sniffer 设置，缺少时加入基本 HTTP/TLS 识别。局域网和 Tailscale 规则保留；新服务继续由默认规则与自动代理组承接，地区资格不能从加密的业务错误中自动推断。
 
 同版本部署应固定 scripts 的 Git 提交和 proxy 子模块提交；两机节点、认证、出口核对及质量记录仍各自保留。修改源码或子模块 pin 不会自动升级内核或启用 TUN。

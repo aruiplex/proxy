@@ -1,5 +1,15 @@
 # 维护交接
 
+## 2026-10-17：NAS / Stallion 统一 Linux TUN（已验收）
+
+两机固定相同 scripts/proxy 提交，内核仍为 adaptive.3。实际应用运行在 Stallion 的 SSH 会话时不再依赖 agy-proxy；它保留为兼容入口。部署使用非 root 的 system unit `proxy-mihomo-1000.service`，旧用户 unit 已停止/禁用，新 unit 已配置开机启动及异常重启。维护流程见 [Linux TUN](usage/linux-tun.md)，具体 PID、模式和脱敏验收见 [部署结果](research/linux-tun-deployment-results.json)。
+
+NAS 为 system 栈、auto-redirect=false 的 TUN 路由模式；Stallion 为 system 栈、auto-redirect=true。工具版本一致不要求私密节点或本机适配参数相同。两机清空代理环境后的原生 Antigravity、真实 GPT/TLS、IPv6 HTTPS、新 SSH/Tailscale 均通过；NAS 另有原生 Codex 完整最小回复。订阅/节点池重放及监听归属检查覆盖相应边界。实际重启整机、生产崩溃注入、全面 UDP/QUIC 不在本次验收范围；Maestro 原业务会议未恢复/重放。
+
+首次候选 gvisor 因发行未编入而失败，NAS auto-redirect 又出现 netlink ENOENT；两次均在独立回退保护下恢复旧服务，再以兼容参数重试成功。不能以 -t 或控制器启动替代实际 TUN 状态与业务验收。带能力进程限制 /proc/PID/fd 访问时，监测使用 socket cgroup/UID 与唯一 PID 成员核对，不增加 root 读取权限。
+
+当前匹配的私密恢复与验收：NAS `$HOME/.local/state/proxy-maintenance/tun-20261017-route`，Stallion `$HOME/.local/state/proxy-maintenance/tun-20261017`。成功后回退计时均解除；旧失败阶段材料保留为证据，不能重新启用旧计时器。需要恢复时使用当前匹配目录的 deployment.py rollback --force，先停止 system unit 再恢复旧配置/标记/用户监督器。接手先查实时状态、Git 和该目录 handoff.md，不用历史 PID 代替实测。
+
 ## 2026-10-16：Antigravity 地区错误
 
 已复现并修复：自动组曾把 DIRECT 放入代理策略，节点池只留下极少兜底规则。Google 推理连接实际经过 DIRECT，原生 agy 返回地区不支持；当时直连出口的两个公开地理服务均显示 HK，不能据此断言是大陆 IP 或 Google 内部分类。独立 CA/US 出口与修复后现用配置均通过原生 agy 请求。

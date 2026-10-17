@@ -632,6 +632,8 @@ sub_refresh() { (
     fi
     source "$SCRIPT_DIR/lib/auto.sh"
     _adaptive_replay "$new" || return 1
+    source "$SCRIPT_DIR/lib/tun.sh"
+    _tun_replay "$new" || return 1
     if ! mihomo_test "$new"; then
         warn "新订阅校验失败, 未替换; 末尾:"
         "$bin" -t -d "$CONF_DIR" -f "$new" 2>&1 | tail -3 >&2

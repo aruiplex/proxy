@@ -515,6 +515,8 @@ pool_refresh() { (
     fi
     source "$SCRIPT_DIR/lib/auto.sh"
     _adaptive_replay "$out" || return 1
+    source "$SCRIPT_DIR/lib/tun.sh"
+    _tun_replay "$out" || return 1
     if ! mihomo_test "$out"; then
         warn "池配置校验失败, 未替换 config.yaml, mihomo 未受影响:"
         "$bin" -t -d "$CONF_DIR" -f "$out" 2>&1 | tail -4 >&2

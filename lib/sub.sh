@@ -129,12 +129,20 @@ for line in text.splitlines():
         host, port = u.hostname, u.port
     except (ValueError, UnicodeError):
         continue
-    name = urllib.parse.unquote(u.fragment).strip() or l.split('#', 1)[-1].strip()
+    name = urllib.parse.unquote(u.fragment).strip() or host or scheme
     if not name or is_info(name):
         continue
     q = urllib.parse.parse_qs(u.query)
     p = None
-    if scheme == 'hysteria2':
+    if scheme == 'anytls':
+        p = {'name': name, 'type': 'anytls', 'server': host,
+             'port': port if port is not None else 443,
+             'password': urllib.parse.unquote(u.username or '')}
+        if not p['password']:
+            continue
+        if q.get('sni'): p['sni'] = q['sni'][0]
+        if q.get('insecure', ['0'])[0] == '1': p['skip-cert-verify'] = True
+    elif scheme == 'hysteria2':
         p = {'name': name, 'type': 'hysteria2', 'server': host,
              'port': port, 'password': urllib.parse.unquote(u.username or '')}
         if q.get('sni'): p['sni'] = q['sni'][0]
@@ -308,88 +316,13 @@ PY
 #      always finds the API no matter what port the airport ships.
 _sub_sanitize() { # <file> [controller] [lan]
     has python3 || die "订阅清理需要 python3"
-    python3 - "$1" "${2:-$(controller_addr)}" "${3:-$(conf_get lan)}" "$CONFIG" <<'PY'
+    python3 - "$1" "${2:-$(controller_addr)}" "${3:-$(conf_get lan)}" "$CONFIG" "$SCRIPT_DIR/libexec" <<'PY'
 import sys, re
-path, ctrl, lan, local_path = sys.argv[1:5]
-lines = open(path, encoding='utf-8').read().splitlines(keepends=True)
+path, ctrl, lan, local_path, library = sys.argv[1:6]
+sys.path.insert(0, library)
+from subscription_profile import sanitize
 
-pat = re.compile(r'剩余流量|套餐|到期|重置|官网|客服|邮箱|支持AI')
-
-# Normalize a YAML scalar enough for matching pseudo-node names. Direct pattern
-# matching is also used below, so a stale reference is removed even when its
-# definition used a different quoting style.
-def node_name(raw):
-    raw = raw.strip()
-    if raw[:1] in ("'", '"') and raw[-1:] == raw[:1]:
-        raw = raw[1:-1]
-    return raw.strip()
-
-# 1. collect info-node names from the top-level proxies section only, both flow
-#    (`- { name: X, ...`) and block (`- name: X` + props) styles
-defs = []
-section = None
-for ln in lines:
-    top = re.match(r'^([A-Za-z][A-Za-z0-9_-]*):', ln)
-    if top:
-        section = top.group(1)
-        continue
-    if section != 'proxies':
-        continue
-    mf = re.match(r'^[ \t]+-\s*\{\s*name:\s*([^,}]+?),', ln)
-    mb = re.match(r'^[ \t]+-\s*name:\s*([^,\n]+?)\s*$', ln)
-    nm = None
-    if mf:
-        nm = node_name(mf.group(1))
-    elif mb:
-        nm = node_name(mb.group(1))
-    if nm and pat.search(nm) and nm not in defs:
-        defs.append(nm)
-
-# 2. line-based removal: definitions (whole entry), flow-list members,
-#    and block-style member lines
-out, skip_until = [], -1
-section = None
-for i, ln in enumerate(lines):
-    if i < skip_until:
-        continue
-    top = re.match(r'^([A-Za-z][A-Za-z0-9_-]*):', ln)
-    if top:
-        section = top.group(1)
-        out.append(ln)
-        continue
-    # block-style definition entry -> skip name line + following props
-    mb = re.match(r'^([ \t]+)-\s*name:\s*(["\']?)(.*?)\2\s*$', ln)
-    if section == 'proxies' and mb and (node_name(mb.group(3)) in defs or pat.search(node_name(mb.group(3)))):
-        indent = len(mb.group(1))
-        j = i + 1
-        while j < len(lines):
-            l2 = lines[j]
-            if not l2.strip():
-                j += 1; continue
-            if len(l2) - len(l2.lstrip(' ')) <= indent:
-                break
-            j += 1
-        skip_until = j
-        continue
-    # flow-style definition line
-    mf = re.match(r'^[ \t]+-\s*\{\s*name:\s*["\']?(.*?)["\']?\s*,', ln)
-    if section == 'proxies' and mf and (node_name(mf.group(1)) in defs or pat.search(node_name(mf.group(1)))):
-        continue
-    # flow-style member list: proxies: [a, b, c]
-    ml = re.match(r'^([ \t]*proxies:[ \t]*)\[(.*)\]([ \t]*\n?)$', ln)
-    if section == 'proxy-groups' and ml:
-        toks = [x.strip() for x in ml.group(2).split(',') if x.strip()]
-        keep = [x for x in toks if node_name(x) not in defs and not pat.search(node_name(x))]
-        out.append(ml.group(1) + '[' + ', '.join(keep) + ']' + ml.group(3))
-        continue
-    # block-style member line: `- <dropped name>`
-    mm = re.match(r'^([ \t]+)-[ \t]+(.+?)[ \t]*$', ln)
-    if section == 'proxy-groups' and mm and 'name:' not in ln \
-       and (node_name(mm.group(2)) in defs or pat.search(node_name(mm.group(2)))):
-        continue
-    out.append(ln)
-
-t = ''.join(out)
+t = sanitize(open(path, encoding='utf-8').read())
 
 # Persist machine-local controller/UI/LAN settings across subscription refreshes.
 def set_kv(name, val):

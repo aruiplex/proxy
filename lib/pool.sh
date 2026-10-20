@@ -68,6 +68,18 @@ _pool_fetch() { # <name> <url> <ua> <work>
     if ! curl_download_private "$url" "$raw" "$ua" 2>/dev/null; then
         warn "订阅 '$name' 拉取失败"
     else
+        local native_profile
+        native_profile=$(python3 - "$raw" <<'PY'
+import base64, re, sys
+raw = open(sys.argv[1], encoding='utf-8').read().strip()
+if not re.search(r'(?m)^rules\s*:', raw):
+    try:
+        raw = base64.urlsafe_b64decode(raw + '=' * (-len(raw) % 4)).decode()
+    except (ValueError, UnicodeError):
+        pass
+print(int(bool(re.search(r'(?m)^rules\s*:', raw))))
+PY
+        ) || return 1
         if _sub_convert "$raw" >/dev/null 2>&1 \
            && _sub_sanitize "$raw" >/dev/null 2>&1 \
            && python3 - "$raw" "$prox" <<'PY'
@@ -92,6 +104,10 @@ for ln in lines[idx:]:
 open(dst, 'w').write(''.join(out))
 PY
         then
+            # A URI list contributes fresh nodes, not a replacement routing policy.
+            if [[ "$native_profile" == 0 && -f "$POOL_STATE_DIR/$name.profile" ]]; then
+                cp -f "$POOL_STATE_DIR/$name.profile" "$raw" || return 1
+            fi
             : > "$work/$name.fresh"
             return 0
         fi
@@ -116,7 +132,7 @@ _pool_assemble() { # <work-dir> <out-file>
     python3 - "$1" "$CONFIG" "$REGIONS_FILE" "$2" "$(controller_addr)" "$(conf_get lan)" "$(_region_exclude)" "$(_region_interval)" "$(_region_url)" "${POOL_RULES_SOURCE:-$(conf_get pool_rules_source)}" "$(conf_get active_sub)" "$SCRIPT_DIR/libexec" <<'PY'
 import sys, re, os, glob, json
 sys.path.insert(0, sys.argv[12])
-from routing_profile import routing_entry
+from routing_profile import entries as profile_entries, section as profile_section, routing_entry, replace_field
 from pool_profile import apply_profile
 
 work, oldconf, regfile, outpath, ctrl, lan, exclude, interval, test_url = sys.argv[1:10]
@@ -257,36 +273,12 @@ except Exception:
 entries = []   # (canonical, cleaned-original, text)
 for pf in sorted(glob.glob(os.path.join(work, '*.prox'))):
     t = open(pf, encoding='utf-8').read()
-    lines = t.splitlines(keepends=True)
-    i = 0
-    while i < len(lines):
-        ln = lines[i]
-        m = re.match(r'^([ \t]+)-\s', ln)
-        if m and 'name:' in ln:
-            if '{' in ln:                       # flow style: single line
-                buf = [ln]; i += 1
-            else:                               # block style: until next entry
-                indent = m.group(1)
-                buf = [ln]; i += 1
-                while i < len(lines):
-                    l2 = lines[i]
-                    if not l2.strip():
-                        buf.append(l2); i += 1; continue
-                    m2 = re.match(r'^([ \t]+)-\s', l2)
-                    if m2 and len(m2.group(1)) == len(indent) and 'name:' in l2:
-                        break
-                    if re.match(r'^[^ \t]', l2):
-                        break
-                    buf.append(l2); i += 1
-            text = ''.join(buf)
-            mname = re.search(r'name:\s*(["\']?)(.*?)\1(?=\s*[,}\n]|$)', text, re.S)
-            raw_name = mname.group(2).strip() if mname else ''
-            if not raw_name:
-                continue
-            cleaned = clean(raw_name)
-            entries.append((region_of(cleaned), cleaned, text, os.path.basename(pf)[:-5], raw_name))
-            continue
-        i += 1
+    for text in profile_entries(profile_section(t, 'proxies')):
+        raw_name = routing_entry(text).get('name')
+        if not isinstance(raw_name, str) or not raw_name:
+            raise ValueError('订阅节点缺少有效名称')
+        cleaned = clean(raw_name)
+        entries.append((region_of(cleaned), cleaned, text, os.path.basename(pf)[:-5], raw_name))
 
 if not entries:
     print('池内无任何节点 (订阅全部失败?)', file=sys.stderr)
@@ -320,9 +312,7 @@ for canon in sorted(by_canon, key=lambda c: (c == '', c)):
 
 # ---- rename the name field in each entry text ----
 def rename(text, new):
-    return re.sub(r'(name:\s*)(["\']?)(.*?)\2(?=\s*[,}\n]|$)',
-                  lambda m: m.group(1) + m.group(2) + new + m.group(2),
-                  text, count=1)
+    return replace_field(text, 'name', new)
 
 proxies_out = []
 for canon, final, text in numbered:
@@ -336,6 +326,16 @@ for canon, final, text in numbered:
                                for line in renamed.splitlines(keepends=True)))
 
 # ---- build groups ----
+reserved_groups = {routing_entry(c)['name'] for c in profile_entries(profile_section(profile, 'proxy-groups'))}
+reserved_groups.update(final for _, final, _ in numbered)
+def group_name(preferred):
+    name = preferred
+    while name in reserved_groups:
+        name = 'POOL-' + name
+    reserved_groups.add(name)
+    return name
+pool_entry = group_name('节点选择')
+pool_master = group_name('AUTO')
 xre = re.compile(exclude) if exclude else None
 gdefs = list(regions)
 have = {g for g, _ in gdefs}
@@ -371,7 +371,7 @@ def sq(s):
 group_lines = []
 chain = []
 for g in gorder:
-    gn = '%s-Auto' % g
+    gn = group_name('%s-Auto' % g)
     chain.append(gn)
     group_lines.append('    - name: %s' % gn)
     group_lines.append('      type: url-test')
@@ -385,7 +385,7 @@ for g in gorder:
         group_lines.append('      exclude-filter: %s' % sq(xre.pattern))
 other_name = None
 if other:
-    other_name = 'Other-Auto'
+    other_name = group_name('Other-Auto')
     chain.append(other_name)
     group_lines.append('    - name: %s' % other_name)
     group_lines.append('      type: url-test')
@@ -398,11 +398,11 @@ if other:
         group_lines.append('        - %s' % nm)
 
 member = '\n'.join('      - %s' % c for c in chain)
-entry_groups = '\n'.join('        - %s' % c for c in ['AUTO'] + chain)
+entry_groups = '\n'.join('        - %s' % c for c in [pool_master] + chain)
 
 proxies_section = 'proxies:\n' + ''.join(proxies_out).rstrip('\n') + '\n'
 groups = ['proxy-groups:',
-          '    - name: 节点选择',
+          '    - name: ' + pool_entry,
           '      type: select',
           '      include-all: true']
 if xre:
@@ -410,7 +410,7 @@ if xre:
 groups.extend([
           '      proxies:',
           entry_groups,
-          '    - name: AUTO',
+          '    - name: ' + pool_master,
           '      type: fallback',
           '      url: %s' % test_url,
           '      interval: %s' % interval,
@@ -449,9 +449,11 @@ else:
                 'external-controller: %s\n' % ctrl)
     rendered += proxies_section
 # The active source owns routing; other subscriptions contribute nodes only.
-rendered = apply_profile(rendered, profile, baseline_renames, '\n'.join(groups[1:]) + '\n', '节点选择', exclude)
+rendered = apply_profile(rendered, profile, baseline_renames, '\n'.join(groups[1:]) + '\n', pool_entry, exclude)
 rendered = re.sub(r'(?m)^x-proxy-node-regions:.*\n?', '', rendered)
 rendered += 'x-proxy-node-regions: ' + json.dumps({final: canon for canon, final, _ in numbered if canon}, ensure_ascii=False) + '\n'
+rendered = re.sub(r'(?m)^x-proxy-node-sources:.*\n?', '', rendered)
+rendered += 'x-proxy-node-sources: ' + json.dumps(node_sources, ensure_ascii=False) + '\n'
 open(outpath, 'w').write(rendered)
 print('merged %d nodes from %d entries' % (len(numbered), len(entries)))
 PY
@@ -577,7 +579,13 @@ pool_status() {
             i=$((i + 1))
             total_subs=$((total_subs + 1))
             sub_name=$(basename "$f" .prox)
-            count=$(grep -cE '^[ \t]+- ' "$f" 2>/dev/null || true)
+            count=$(python3 - "$f" "$SCRIPT_DIR/libexec" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[2])
+from routing_profile import entries, section
+print(len(entries(section(open(sys.argv[1], encoding='utf-8').read(), 'proxies'))))
+PY
+            ) || return 1
             count=${count:-0}
             total_nodes=$((total_nodes + count))
             if (( i == n_subs )); then branch="└─"; else branch="├─"; fi

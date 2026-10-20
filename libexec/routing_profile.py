@@ -72,9 +72,10 @@ def value(raw):
         result = {}
         for item in split_flow(raw[1:-1]):
             key, sep, val = item.partition(':')
-            if not sep or key.strip() in result:
+            key = scalar(key)
+            if not sep or key in result:
                 raise ProfileError('不支持或重复的 YAML 字段')
-            result[key.strip()] = value(val)
+            result[key] = value(val)
         return result
     return scalar(raw)
 
@@ -133,6 +134,7 @@ def routing_entry(chunk):
             result[list_key].append(scalar(line[2:]))
             continue
         key, sep, raw = line.partition(':')
+        key = scalar(key)
         # Only the routing fields are interpreted; other nested fields stay opaque.
         if not sep or key not in {'name', 'type', 'proxies', 'use', 'include-all', 'include-all-proxies',
                                   'include-all-providers', 'filter', 'exclude-filter', 'exclude-type', 'dialer-proxy'}:
@@ -145,6 +147,42 @@ def routing_entry(chunk):
         else:
             result[key], list_key = value(raw), None
     return result
+
+
+def replace_field(chunk, key, replacement):
+    """Edit one root field, preserving opaque credentials and nested options."""
+    lines = chunk.splitlines(keepends=True)
+    indent = re.match(r'^([ \t]*)-', lines[0])[1]
+    first = re.sub(r'^\s*-\s+', '', lines[0]).strip()
+    encoded = json.dumps(replacement, ensure_ascii=False)
+    if first.startswith('{'):
+        fields = split_flow(first[1:-1])
+        found = False
+        for i, field in enumerate(fields):
+            if scalar(field.partition(':')[0]) == key:
+                fields[i] = key + ': ' + encoded
+                found = True
+        if not found:
+            fields.append(key + ': ' + encoded)
+        return indent + '- {' + ', '.join(fields) + '}\n'
+    field_indent = len(indent) + 2
+    for i, line in enumerate(lines):
+        raw = first if i == 0 else line.strip()
+        if i and len(line) - len(line.lstrip()) != field_indent:
+            continue
+        if scalar(raw.partition(':')[0]) != key:
+            continue
+        end = i + 1
+        while end < len(lines):
+            row = lines[end]
+            level = len(row) - len(row.lstrip())
+            if row.strip() and level <= field_indent and not (level == field_indent and row.lstrip().startswith('- ')):
+                break
+            end += 1
+        prefix = indent + '- ' if i == 0 else ' ' * field_indent
+        lines[i:end] = [prefix + key + ': ' + encoded + '\n']
+        return ''.join(lines)
+    return chunk.rstrip('\n') + '\n' + ' ' * field_indent + key + ': ' + encoded + '\n'
 
 
 def replace_section(text, key, body):
@@ -164,7 +202,7 @@ def node_identity(node):
         if first.startswith('{'):
             # Split at actual mapping fields, never at text inside credentials.
             fields = split_flow(first[1:-1])
-            data = '- {' + ', '.join('name: NODE' if f.partition(':')[0].strip() == 'name' else f for f in fields) + '}'
+            data = '- {' + ', '.join('name: NODE' if scalar(f.partition(':')[0]) == 'name' else f for f in fields) + '}'
         else:
             if first.startswith('name:'):
                 data = re.sub(r'^(\s*-\s+name:)\s*[^\n]+', r'\1 NODE', node, count=1)

@@ -1,5 +1,15 @@
 # 维护交接
 
+## 2026-10-20：完整订阅导入与 Google 候选发现
+
+NAS 已刷新并完整导入 default 28、riolu01 46、crosswall 16，共 90 个实际节点。修复顶格 YAML 列表、根字段顺序导致的整订阅遗漏，信息占位节点及引用一起清理；AnyTLS URI 支持编码密码、默认端口、IPv6、SNI 和 insecure。节点列表刷新保留已有订阅路由基准，避免转换器的简单 MATCH 覆盖原规则；合成策略组避免订阅同名组冲突。各源数量可从 config.yaml 的 x-proxy-node-sources 核对。
+
+本次 Google 故障来自 NAS 的 ACoreX 线路巡检在 00:35 隔离最后一个候选，提交空 verified_regions 后生成 REJECT。ACoreX v0.4.1 现在从原代理策略范围持续发现新节点，按真实出口和两次间隔至少 60 秒的原生请求准入；健康复检与发现分别保留预算。初始独立验证了三个 US/JP 出口，其余按预算继续验证，不把节点名称当地区或业务证据。升级后的官方 CLI 为 1.4.3，受管调用关闭后台自动更新。
+
+代理 81 项、应用 517 项离线检查、真实完整流程 12 轮和共享池 8 轮通过。NAS 配置热加载跨越同一 ChatGPT TLS socket，另有独立三次 HTTPS 200、持续 PID/监听归属及线上原生 agy 成功。主内核仍为 adaptive.4；应用四个接收器新轮询、独占锁和会话/配置摘要通过，未重放用户任务或发送真实微信测试消息。Stallion 仅同步管理工具固定提交，保留其现用订阅、配置、资格和质量状态。
+
+匹配快照、事务、脱敏验收和回退入口保留在 NAS `$HOME/.local/state/proxy-maintenance/import-discovery-20261020-yxb53aod`；线上结果为 accepted-results.json。独立回退计时已解除。接手先核对实时状态；后台发现可能继续增加候选，不能用此快照覆盖后续配置。
+
 ## 2026-10-17：NAS / Stallion 统一 Linux TUN（已验收）
 
 两机固定相同 scripts/proxy 提交，内核仍为 adaptive.3。实际应用运行在 Stallion 的 SSH 会话时不再依赖 agy-proxy；它保留为兼容入口。部署使用非 root 的 system unit `proxy-mihomo-1000.service`，旧用户 unit 已停止/禁用，新 unit 已配置开机启动及异常重启。维护流程见 [Linux TUN](usage/linux-tun.md)，具体 PID、模式和脱敏验收见 [部署结果](research/linux-tun-deployment-results.json)。

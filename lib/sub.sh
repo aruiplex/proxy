@@ -524,6 +524,10 @@ sub_set() {   # legacy one-shot
 }
 
 sub_refresh() { (
+    if ! python3 "$SCRIPT_DIR/libexec/configuration_lock.py" --root "$CONF_DIR" --owned; then
+        python3 "$SCRIPT_DIR/libexec/configuration_lock.py" --root "$CONF_DIR" -- "$SCRIPT_DIR/proxy" sub refresh "$@"
+        return $?
+    fi
     local name=${1:-$(_sub_active_name)}
     if [[ "$(conf_get pool)" == "on" ]]; then
         warn "节点池模式已开启: 用 proxy pool refresh 刷新所有订阅 / proxy pool off 退回单订阅"

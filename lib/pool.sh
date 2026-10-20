@@ -461,6 +461,10 @@ PY
 
 # --- build the pool: fetch all subs, assemble, validate, replace, apply ---
 pool_refresh() { (
+    if ! python3 "$SCRIPT_DIR/libexec/configuration_lock.py" --root "$CONF_DIR" --owned; then
+        python3 "$SCRIPT_DIR/libexec/configuration_lock.py" --root "$CONF_DIR" -- "$SCRIPT_DIR/proxy" pool refresh "$@"
+        return $?
+    fi
     json_guard
     local bin ua
     bin=$(mihomo_bin) || die "未找到 mihomo 二进制 (运行 proxy install)"
@@ -607,14 +611,15 @@ PY
 
         say ""
         say "  ${C_B}🌐 地区自动测速/故障转移组 (实时状态):${C_N}"
-        python3 - <<'PY'
-import sys, json, urllib.request
+        python3 - "$CONF_DIR" "$SCRIPT_DIR/libexec" <<'PY'
+import sys, json
+from pathlib import Path
+sys.path.insert(0, sys.argv[2])
+from quality import Controller
 
 def fetch_proxies():
     try:
-        req = urllib.request.Request("http://127.0.0.1:9090/proxies")
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            return json.loads(resp.read().decode())
+        return Controller(Path(sys.argv[1]), budget=3).request('/proxies')
     except Exception:
         return {}
 

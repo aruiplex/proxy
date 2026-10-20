@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from routing_profile import ProfileError, entries, routing_entry, node_identity, section as profile_section, scalar
 from policy_routing import compile_groups, tcp_rules
+from route_dependencies import NodeGraph
 
 GROUP = 'AUTO-ADAPTIVE'
 BEGIN = '# >>> adaptive (auto) >>>'
@@ -113,7 +114,8 @@ def render(text, prefs):
         owned = set(config.get('x-proxy-adaptive-owned', [])) | {policy(r) for r in config.get('rules', []) if generated_rule(r)}
         if any(g['name'].startswith(GROUP) and (g.get('type') != 'adaptive' or g['name'] not in owned) for g in groups):
             raise ConfigError('保留名称 AUTO-ADAPTIVE 已被其他策略使用')
-        nodes = [dict(p, identity=node_identity(p)) for p in config.get('proxies', [])]
+        graph = NodeGraph(config.get('proxies', []), groups)
+        nodes = [dict(p, identity=graph.identity(p['name'])) for p in config.get('proxies', [])]
         original_groups = [g for g in groups if not g['name'].startswith(GROUP)]
         generated, routes = compile_groups(original_groups, nodes, prefs, selected, providers=bool(config.get('proxy-providers')))
         config['proxy-groups'] = original_groups + generated
@@ -161,9 +163,11 @@ def render(text, prefs):
     available = set(group_names) | ({GROUP} if previous_owned else set())
     selected = select_policies(rules, available, prefs)
     nodes = []
-    for chunk in entries(profile_section(text, 'proxies', required=False)):
+    chunks = entries(profile_section(text, 'proxies', required=False))
+    graph = NodeGraph(chunks, entries(profile_section(text, 'proxy-groups')))
+    for chunk in chunks:
         node = routing_entry(chunk)
-        node['identity'] = node_identity(chunk)
+        node['identity'] = graph.identity(node['name'])
         nodes.append(node)
     hints = {}
     metadata = re.search(r'(?m)^x-proxy-node-regions:\s*(.+)$', text)

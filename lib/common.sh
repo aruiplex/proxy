@@ -185,6 +185,15 @@ ctrl_require() {
 # --- JSON: prefer python3 (near-universal); degrade to a clear message if absent ---
 json_guard() { has python3 || die "此命令需要 python3 解析 JSON (未安装)"; }
 
+# Run only in the daemon child: a long-lived kernel must not retain a CLI lease.
+detach_configuration_lock() {
+    local configuration_fd=${PROXY_CONFIGURATION_FD:-}
+    if [[ "$configuration_fd" =~ ^[0-9]+$ ]] && (( configuration_fd > 2 )); then
+        exec {configuration_fd}>&-
+    fi
+    unset PROXY_CONFIGURATION_FD PROXY_CONFIGURATION_TOKEN
+}
+
 # mihomo config validation: exit 0 if the file parses, else nonzero; stderr captured
 mihomo_test() {
     local f=$1 bin

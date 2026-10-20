@@ -36,7 +36,7 @@ usage_all() {
     printf '  %-*s %s\n' "$w" "use [<#|子串>]" "交互选择或按序号/子串切换节点 (同 node use)"
     printf '  %-*s %s\n' "$w" "test [GROUP]" "测节点延迟并即选切换 (同 node test)"
     printf '  %-*s %s\n' "$w" "ls | nodes" "查看当前节点列表 (同 node list)"
-    printf '  %-*s %s\n' "$w" "refresh | update" "拉取刷新活跃订阅 (同 sub refresh)"
+    printf '  %-*s %s\n' "$w" "refresh | update" "更新订阅；节点池模式刷新全部订阅"
     printf '\n'
 
     printf '  %s📦 安装%s\n' "${C_B}" "$n"
@@ -113,7 +113,9 @@ case $cmd in
     use|switch)     load node; node_use "$@" ;;
     test)           load node; node_test "$@" ;;
     ls|nodes)       load node; node_list "$@" ;;
-    refresh|update) load sub; sub_refresh "$@" ;;
+    refresh|update)
+        if [[ "$(conf_get pool)" == on ]]; then load pool; pool_refresh "$@"
+        else load sub; sub_refresh "$@"; fi ;;
     menu)           usage "$@" ;; # legacy entry: the daily interface is the CLI
 
     # --- lifecycle & management ---

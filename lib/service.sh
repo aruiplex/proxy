@@ -94,7 +94,7 @@ svc_start() {
     fi
     mkdir -p "$CONF_DIR"
     info "启动 mihomo ..."
-    nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 &
+    ( detach_configuration_lock; exec nohup "$bin" -d "$CONF_DIR" -f "$CONFIG" >> "$LOG" 2>&1 ) &
     printf '%s\n' "$!" > "$PID_FILE"
     local i
     for i in 1 2 3 4 5; do

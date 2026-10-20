@@ -26,6 +26,7 @@ class SubscriptionUpdate(unittest.TestCase):
             def payload(name):
                 if name=='crosswall':
                     if generation[0]==1:return first.encode()
+                    if generation[0]==3:return base64.b64encode(b'anytls://pw@new.test#US%20known\ntuic://private-secret@future.test#US%20unknown\n')
                     return base64.b64encode(b'anytls://pw@fixture.test#CA%20cross\nanytls://pw@fixture2.test#US%20extra\n')
                 count=generation[0]
                 return ('proxies:\n'+''.join('- type: http\n  server: fixture.test\n  port: '+str(i+10)+'\n  name: '+name+' US '+str(i)+'\n' for i in range(count))).encode()
@@ -60,5 +61,15 @@ class SubscriptionUpdate(unittest.TestCase):
                     self.assertIn('DOMAIN,keep.test,DIRECT',text)
                     self.assertIn('MATCH,BASE',text)
                 self.assertEqual(len(published),2)
+                generation[0]=3
+                r=subprocess.run([str(ROOT/'proxy'),'update'],env=env,capture_output=True,text=True,timeout=20)
+                self.assertEqual(r.returncode,0,r.stderr)
+                text=(conf/'config.yaml').read_text()
+                sources=json.loads(next(l.split(':',1)[1] for l in text.splitlines() if l.startswith('x-proxy-node-sources:')))
+                self.assertEqual(dict(collections.Counter(sources.values())),{'crosswall':2,'default':3,'riolu':3})
+                self.assertIn('解析失败',r.stderr)
+                self.assertIn('沿用完整缓存 1',r.stdout)
+                self.assertNotIn('private-secret',r.stdout+r.stderr)
+                self.assertEqual(len(published),3)
             finally:
                 server.shutdown();server.server_close();thread.join(3)

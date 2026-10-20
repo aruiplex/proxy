@@ -112,3 +112,15 @@ class SubscriptionImport(unittest.TestCase):
                 '  alpn:\n  - h2\n  - http/1.1\n- {name: two, type: http}\n')
             result = self.shell(d, 'ctrl_up() { return 1; }\npool_status')
             self.assertRegex(result.stdout, r'example\s+2 节点')
+
+    def test_unknown_uri_does_not_publish_a_silently_partial_subscription(self):
+        with tempfile.TemporaryDirectory() as name:
+            d=Path(name)
+            original='anytls://pw@edge.test#US%20known\ntuic://private-secret@other.test#US%20new\n'
+            (d/'raw').write_text(original)
+            env=dict(os.environ,CONF_DIR=str(d),SCRIPT_DIR=str(ROOT),STAGING=str(d),PYTHONDONTWRITEBYTECODE='1')
+            command='source "$SCRIPT_DIR/lib/common.sh"\nsource "$SCRIPT_DIR/lib/sub.sh"\n_sub_convert "$STAGING/raw" 127.0.0.1:9090'
+            result=subprocess.run(['bash','-c',command],env=env,capture_output=True,text=True,timeout=10)
+            self.assertNotEqual(result.returncode,0)
+            self.assertEqual((d/'raw').read_text(),original)
+            self.assertNotIn('private-secret',result.stderr)

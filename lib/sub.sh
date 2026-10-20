@@ -119,6 +119,7 @@ def ok_port(p):
     return 1 <= p['port'] <= 65535
 
 nodes = []
+unparsed = 0
 for line in text.splitlines():
     l = line.strip()
     if not l or '://' not in l:
@@ -128,6 +129,7 @@ for line in text.splitlines():
         u = urllib.parse.urlsplit(l)
         host, port = u.hostname, u.port
     except (ValueError, UnicodeError):
+        unparsed += 1
         continue
     name = urllib.parse.unquote(u.fragment).strip() or host or scheme
     if not name or is_info(name):
@@ -139,6 +141,7 @@ for line in text.splitlines():
              'port': port if port is not None else 443,
              'password': urllib.parse.unquote(u.username or '')}
         if not p['password']:
+            unparsed += 1
             continue
         if q.get('sni'): p['sni'] = q['sni'][0]
         if q.get('insecure', ['0'])[0] == '1': p['skip-cert-verify'] = True
@@ -182,6 +185,7 @@ for line in text.splitlines():
             try:
                 data = json.loads(urllib.parse.unquote(u.netloc))
             except Exception:
+                unparsed += 1
                 continue
         p = {'name': data.get('ps') or name, 'type': 'vmess',
              'server': data.get('add'), 'port': data.get('port'),
@@ -212,6 +216,7 @@ for line in text.splitlines():
                 try:
                     dec = b64text(userinfo)
                 except Exception:
+                    unparsed += 1
                     continue
             else:
                 dec = userinfo
@@ -222,6 +227,7 @@ for line in text.splitlines():
             try:
                 decoded = b64text(body)
             except Exception:
+                unparsed += 1
                 continue
             m = re.match(r'^([^:]+):([^@]+)@([^:]+):(\d+)$', decoded)
             if m:
@@ -230,6 +236,12 @@ for line in text.splitlines():
                      'cipher': method, 'password': password}
     if p and ok_port(p) and p.get('server'):
         nodes.append(p)
+    else:
+        unparsed += 1
+
+if unparsed:
+    print('无法完整解析订阅: %d 个节点格式不支持或无效，未生成部分节点配置' % unparsed, file=sys.stderr)
+    sys.exit(1)
 
 if not nodes:
     print('无法解析: 内容既不是 Clash YAML 也没有可识别的节点', file=sys.stderr)

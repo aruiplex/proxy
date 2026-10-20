@@ -494,13 +494,13 @@ pool_refresh() { (
 
     local work; work=$(mktemp -d) || die "无法创建节点池临时目录"
     trap 'rm -rf "$work"' EXIT
-    local i okn=0
+    local i okn=0 freshn=0 cachedn=0
     for i in "${!names[@]}"; do
         info "拉取 '${names[$i]}' ..."
         _pool_fetch "${names[$i]}" "${urls[$i]}" "$ua" "$work"
         case $? in
-            0) okn=$((okn+1)) ;;
-            2) okn=$((okn+1)) ;;   # stale but usable
+            0) okn=$((okn+1)); freshn=$((freshn+1)) ;;
+            2) okn=$((okn+1)); cachedn=$((cachedn+1)) ;;   # stale but usable
         esac
     done
 
@@ -539,7 +539,7 @@ pool_refresh() { (
     done
     cp -f "$CONFIG" "$BAK" || die "无法备份当前配置，节点池未替换"
     mv -f "$out" "$CONFIG" || die "无法替换 config.yaml"
-    ok "节点池已构建: $okn/${#names[@]} 个订阅生效"
+    ok "节点池已构建: $okn/${#names[@]} 个订阅生效 (本次更新 $freshn，沿用完整缓存 $cachedn)"
     date +%s > "$POOL_STATE_DIR/.built"
 
     # shellcheck source=service.sh

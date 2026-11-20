@@ -58,6 +58,8 @@ class Handler(BaseHTTPRequestHandler):
         self.server.posts.append((self.path, json.loads(self.rfile.read(int(self.headers['Content-Length'])))))
         self.send_response(self.server.feedback_status)
         self.end_headers()
+        if self.server.feedback_status == 200:
+            self.wfile.write(json.dumps(self.server.feedback_receipt).encode())
 
 
 class DailyCLI(unittest.TestCase):
@@ -141,9 +143,17 @@ class DailyCLI(unittest.TestCase):
         before = self.snapshot()
         output = self.cli('next', 'AI.TEST', '--reason', 'timeout').stdout
         self.assertIn('已有健康连接保持', output)
-        self.assertEqual(self.server.posts, [('/proxies/%E8%87%AA%E5%8A%A8%2F%E7%BB%84/feedback',
+        self.assertEqual(self.server.posts, [('/proxies/%E8%87%AA%E5%8A%A8%2F%E7%BB%84/feedback?receipt=1',
             {'target': 'ai.test:443', 'reason': 'timeout'})])
         self.assertEqual(self.snapshot(), before)
+
+    def test_next_displays_actual_node_and_recovery_time(self):
+        self.server.feedback_status = 200
+        self.server.feedback_receipt = {'node': 'fixture B', 'cooldownUntil': '2026-10-12T10:30:00+08:00'}
+        result = self.cli('next', 'ai.test')
+        self.assertIn('排除节点 fixture B', result.stdout)
+        self.assertIn('恢复候选时间 2026-10-12 10:30:00+08:00', result.stdout)
+        self.assertEqual(self.server.posts[0][1], {'target': 'ai.test:443', 'reason': 'unusable'})
 
     def test_ports_and_ipv6_are_exact_and_never_match_subdomains(self):
         for target, normalized in [('AI.TEST:8443', 'ai.test:8443'), ('[2001:db8::1]:443', '[2001:db8::1]:443')]:

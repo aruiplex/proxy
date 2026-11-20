@@ -176,8 +176,17 @@ def main():
             group = groups[0]
         path = '/proxies/' + urllib.parse.quote(group, safe='')
         if args.command in ('feedback', 'next'):
-            controller.request(path + '/feedback', {'target': target or args.target, 'reason': args.reason})
-            print('已反馈' + (' ' + target + ' [' + group + ']' if target else '') + '；该目标后续连接重新选路，已有健康连接保持。')
+            receipt_query = '?receipt=1' if args.command == 'next' else ''
+            result = controller.request(path + '/feedback' + receipt_query,
+                                        {'target': target or args.target, 'reason': args.reason})
+            if args.command == 'next' and result is not None:
+                node = result['node']
+                until = result['cooldownUntil'].replace('T', ' ', 1)
+                print(f'已反馈 {target} [{group}]；排除节点 {node}，恢复候选时间 {until}。')
+            else:
+                print('已反馈' + (' ' + target + ' [' + group + ']' if target else '') + '；该目标后续连接重新选路，已有健康连接保持。')
+                if args.command == 'next':
+                    print('当前内核未返回排除节点和恢复时间。', file=sys.stderr)
             return 0
         result = controller.quality(group)
         if args.target:
